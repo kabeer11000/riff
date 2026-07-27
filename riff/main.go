@@ -34,7 +34,7 @@ func main() {
 	jsonCache := cache.NewJSON()
 	defer jsonCache.Close()
 
-	y := ytdl.New(cfg.YTDLPPath)
+	y := ytdl.New(cfg.YTDLPPath, cfg.YTDLPCookiesFile)
 	regs := &provider.Registry{Providers: []provider.Provider{provider.NewYouTube(y)}}
 	ix := index.New(repo)
 

@@ -15,13 +15,26 @@ import (
 //   2. Stream resolution: best directly-proxyable format URL for a video id.
 // Higher-level metadata (artist, album, thumbnail) is read from the raw Info
 // struct by the provider layer.
-type Client struct{}
+type Client struct {
+	cookiesFile string // empty = no cookies
+}
 
-func New(binPath string) *Client {
+func New(binPath, cookiesFile string) *Client {
 	if binPath != "" {
 		goutubedl.Path = binPath
 	}
-	return &Client{}
+	return &Client{cookiesFile: cookiesFile}
+}
+
+// ytOptions returns the goutubedl options configured for this client. Callers
+// pass it to goutubedl.New; passing an empty Cookies means yt-dlp runs without
+// authentication, which is fine for some sites but YouTube will block it.
+func (c *Client) ytOptions(modify ...func(*goutubedl.Options)) goutubedl.Options {
+	o := goutubedl.Options{Cookies: c.cookiesFile}
+	for _, m := range modify {
+		m(&o)
+	}
+	return o
 }
 
 const watchURLFmt = "https://www.youtube.com/watch?v=%s"
@@ -49,10 +62,10 @@ func (c *Client) Search(ctx context.Context, query string, limit int) ([]Info, e
 		limit = 20
 	}
 	raw := fmt.Sprintf("ytsearch%d:%s", limit, query)
-	res, err := goutubedl.New(ctx, raw, goutubedl.Options{
-		Type:         goutubedl.TypePlaylist,
-		FlatPlaylist: true,
-	})
+	res, err := goutubedl.New(ctx, raw, c.ytOptions(func(o *goutubedl.Options) {
+		o.Type = goutubedl.TypePlaylist
+		o.FlatPlaylist = true
+	}))
 	if err != nil {
 		return nil, err
 	}
@@ -76,9 +89,9 @@ func (c *Client) Search(ctx context.Context, query string, limit int) ([]Info, e
 
 // ResolveInfo returns metadata for a single YouTube video.
 func (c *Client) ResolveInfo(ctx context.Context, videoID string) (Info, error) {
-	res, err := goutubedl.New(ctx, fmt.Sprintf(watchURLFmt, videoID), goutubedl.Options{
-		Type: goutubedl.TypeSingle,
-	})
+	res, err := goutubedl.New(ctx, fmt.Sprintf(watchURLFmt, videoID), c.ytOptions(func(o *goutubedl.Options) {
+		o.Type = goutubedl.TypeSingle
+	}))
 	if err != nil {
 		return Info{}, err
 	}
@@ -110,9 +123,9 @@ type ResolvedStream struct {
 // ResolveStream resolves a video and picks the best directly-proxyable
 // format of the requested kind ("audio" or "muxed").
 func (c *Client) ResolveStream(ctx context.Context, videoID, kind string) (ResolvedStream, error) {
-	res, err := goutubedl.New(ctx, fmt.Sprintf(watchURLFmt, videoID), goutubedl.Options{
-		Type: goutubedl.TypeSingle,
-	})
+	res, err := goutubedl.New(ctx, fmt.Sprintf(watchURLFmt, videoID), c.ytOptions(func(o *goutubedl.Options) {
+		o.Type = goutubedl.TypeSingle
+	}))
 	if err != nil {
 		return ResolvedStream{}, err
 	}
@@ -133,10 +146,10 @@ func (c *Client) ResolveStream(ctx context.Context, videoID, kind string) (Resol
 
 // Playlist returns the flat listing of an external YouTube playlist.
 func (c *Client) Playlist(ctx context.Context, playlistID string) (string, []Info, error) {
-	res, err := goutubedl.New(ctx, "https://www.youtube.com/playlist?list="+playlistID, goutubedl.Options{
-		Type:         goutubedl.TypePlaylist,
-		FlatPlaylist: true,
-	})
+	res, err := goutubedl.New(ctx, "https://www.youtube.com/playlist?list="+playlistID, c.ytOptions(func(o *goutubedl.Options) {
+		o.Type = goutubedl.TypePlaylist
+		o.FlatPlaylist = true
+	}))
 	if err != nil {
 		return "", nil, err
 	}
@@ -162,10 +175,10 @@ func (c *Client) Playlist(ctx context.Context, playlistID string) (string, []Inf
 
 // Channel returns the flat listing of an external YouTube channel.
 func (c *Client) Channel(ctx context.Context, channelID string) (string, []Info, error) {
-	res, err := goutubedl.New(ctx, "https://www.youtube.com/channel/"+channelID, goutubedl.Options{
-		Type:         goutubedl.TypeChannel,
-		FlatPlaylist: true,
-	})
+	res, err := goutubedl.New(ctx, "https://www.youtube.com/channel/"+channelID, c.ytOptions(func(o *goutubedl.Options) {
+		o.Type = goutubedl.TypeChannel
+		o.FlatPlaylist = true
+	}))
 	if err != nil {
 		return "", nil, err
 	}

@@ -5,6 +5,7 @@ import '../../api/endpoints/history.dart';
 import '../../api/models/continue_card.dart';
 import '../../api/models/history_entry.dart';
 import '../player/now_playing_indicator.dart';
+import '../player/track_context_menu.dart';
 
 class HomeData {
   const HomeData({required this.entries, required this.continueCard});
@@ -76,27 +77,31 @@ String _humanPosition(double secs) {
   return (uploader: best, tracks: tracks);
 }
 
-class HistoryTile extends ConsumerWidget {
+class HistoryTile extends StatelessWidget {
   const HistoryTile({super.key, required this.entry, this.onTap});
   final HistoryEntry entry;
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            _Thumb(entry: entry),
-            const SizedBox(width: 16),
-            Expanded(child: _Text(entry: entry, style: _TextStyle.row)),
-            // Trailing equalizer when this is the playing track.
-            const SizedBox(width: 8),
-            NowPlayingIndicator(trackId: entry.videoId, size: 16),
-          ],
+  Widget build(BuildContext context) {
+    return TrackContextMenu(
+      track: searchResultFromHistory(entry),
+      isHistoryItem: true,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              _Thumb(entry: entry),
+              const SizedBox(width: 16),
+              Expanded(child: _Text(entry: entry, style: _TextStyle.row)),
+              // Trailing equalizer when this is the playing track.
+              const SizedBox(width: 8),
+              NowPlayingIndicator(trackId: entry.videoId, size: 16),
+            ],
+          ),
         ),
       ),
     );
@@ -112,33 +117,37 @@ class HistoryGridCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.all(4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: AspectRatio(
-                aspectRatio: 4 / 3,
-                child: _ThumbArt(
-                  url: entry.thumbnail,
-                  videoId: entry.videoId,
-                  radius: 10,
-                  progress: entry.isLongForm && entry.duration > 0
-                      ? entry.lastPosition / entry.duration
-                      : null,
-                  minutesLeft: entry.isLongForm ? _humanPosition(entry.lastPosition) : null,
+    return TrackContextMenu(
+      track: searchResultFromHistory(entry),
+      isHistoryItem: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: AspectRatio(
+                  aspectRatio: 4 / 3,
+                  child: _ThumbArt(
+                    url: entry.thumbnail,
+                    videoId: entry.videoId,
+                    radius: 10,
+                    progress: entry.isLongForm && entry.duration > 0
+                        ? entry.lastPosition / entry.duration
+                        : null,
+                    minutesLeft: entry.isLongForm ? _humanPosition(entry.lastPosition) : null,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 10),
-            _Text(entry: entry, style: _TextStyle.card),
-          ],
+              const SizedBox(height: 10),
+              _Text(entry: entry, style: _TextStyle.card),
+            ],
+          ),
         ),
       ),
     );

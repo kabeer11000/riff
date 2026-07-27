@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../api/models/search_result.dart';
+import '../../player/track_context_menu.dart';
 
 class SearchResultTile extends StatelessWidget {
   const SearchResultTile({super.key, required this.result, required this.onTap});
@@ -10,16 +11,19 @@ class SearchResultTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return ListTile(
-      onTap: onTap,
-      leading: _Thumb(url: result.thumbnail, videoId: result.id),
-      title: Text(result.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        '${result.uploader.isEmpty ? "Unknown" : result.uploader}'
-        '${result.duration > 0 ? " • ${_fmt(result.duration)}" : ""}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodySmall,
+    return TrackContextMenu(
+      track: result,
+      child: ListTile(
+        onTap: onTap,
+        leading: _Thumb(url: result.thumbnail, videoId: result.id),
+        title: Text(result.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          '${result.uploader.isEmpty ? "Unknown" : result.uploader}'
+          '${result.duration > 0 ? " • ${_fmt(result.duration)}" : ""}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall,
+        ),
       ),
     );
   }

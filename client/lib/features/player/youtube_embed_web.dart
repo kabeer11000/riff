@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
-import 'dart:ui' show ImageFilter;
 import 'dart:ui_web' as ui_web;
 
 import 'package:flutter/material.dart';
@@ -9,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web/web.dart' as web;
 
-import 'ambient_lighting_provider.dart';
 import 'music_disk.dart';
 import 'player_controller.dart';
 import 'video_fullscreen_provider.dart';
@@ -555,18 +553,12 @@ class _EmbedBody extends ConsumerWidget {
     final isPlaying = ref.watch(
       playerControllerProvider.select((s) => s.isPlaying),
     );
-    final thumbnailUrl = ref.watch(
-      playerControllerProvider.select((s) => s.track?.thumbnail ?? ''),
-    );
     // Inline mode auto-hides; fullscreen mode keeps controls visible (user
     // already owns the viewport, fading them out feels punishing).
     final showOverlay = isFullscreen || controlsVisible;
     return Stack(
       fit: isFullscreen ? StackFit.expand : StackFit.loose,
       children: [
-        // YouTube-style ambient lighting: blurred thumbnail behind the
-        // iframe. Self-guards on provider state + thumbnail availability.
-        _AmbientBackdrop(thumbnailUrl: thumbnailUrl),
         Positioned.fill(child: HtmlElementView(viewType: _viewType)),
         // Slight darken on pause so the iframe reads as "stopped" without
         // the controls having to be open. AnimatedOpacity for a soft
@@ -658,8 +650,6 @@ class _EmbedBody extends ConsumerWidget {
                         }
                       },
                     ),
-                    const SizedBox(width: 8),
-                    const _VideoSettingsButton(),
                   ],
                 ),
               ),
@@ -712,76 +702,4 @@ class _EscListenerState extends State<_EscListener> {
       child: widget.child,
     );
   }
-}
-
-/// YouTube-style ambient lighting. Renders a heavily-blurred, scaled-up
-/// version of the current track's thumbnail behind the iframe so the video
-/// appears to bleed color into the surrounding panel. Skips rendering when
-/// [ambientLightingProvider] is off or no thumbnail URL is available —
-/// callers don't need to guard.
-class _AmbientBackdrop extends ConsumerWidget {
-  const _AmbientBackdrop({required this.thumbnailUrl});
-
-  final String thumbnailUrl;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (thumbnailUrl.isEmpty) return const SizedBox.shrink();
-    final enabled = ref.watch(ambientLightingProvider);
-    if (!enabled) return const SizedBox.shrink();
-    // Positioned.fill needs a Stack with bounded constraints — _EmbedBody
-    // wraps us in either AspectRatio (inline) or SizedBox.expand (fs).
-    return Positioned.fill(
-      child: ImageFiltered(
-        imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
-        child: Transform.scale(
-          // Scale up so the blur sigma doesn't reveal an edge — by 1.6x the
-          // blurred edges land well outside the visible frame for our
-          // typical embed sizes.
-          scale: 1.6,
-          child: Image.network(
-            thumbnailUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => const SizedBox.shrink(),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Settings button + popup menu. Currently exposes the ambient lighting
-/// toggle; future player-level settings land here.
-class _VideoSettingsButton extends ConsumerWidget {
-  const _VideoSettingsButton();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return _OverlayButton(
-      icon: Icons.tune,
-      tooltip: 'Settings',
-      onTap: () => _showAmbientMenu(context, ref),
-    );
-  }
-}
-
-void _showAmbientMenu(BuildContext context, WidgetRef ref) {
-  final box = context.findRenderObject() as RenderBox?;
-  if (box == null) return;
-  final overlayBox =
-      Overlay.of(context).context.findRenderObject() as RenderBox?;
-  if (overlayBox == null) return;
-  final rect = box.localToGlobal(Offset.zero) & box.size;
-  showMenu<void>(
-    context: context,
-    position: RelativeRect.fromRect(rect, Offset.zero & overlayBox.size),
-    items: [
-      CheckedPopupMenuItem(
-        checked: ref.read(ambientLightingProvider),
-        child: const Text('Ambient lighting'),
-        onTap: () =>
-            ref.read(ambientLightingProvider.notifier).toggle(),
-      ),
-    ],
-  );
 }

@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'ambient_lighting.dart';
+import 'ambient_lighting_provider.dart';
 import 'cover_video_toggle.dart';
 import 'music_disk.dart';
 import 'player_controller.dart';
@@ -318,133 +320,212 @@ class BigPlayer extends ConsumerWidget {
 
     return Container(
       decoration: BoxDecoration(color: theme.colorScheme.surface),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _DragHandleVisual(),
-            Row(
+      child: Stack(
+        children: [
+          // YouTube-style ambient lighting fills the entire player. The
+          // ambient is heaviest at the top (cover area), fading to surface
+          // color at the bottom so the disk/description/channel content
+          // stays readable.
+          _PlayerAmbientBackground(surface: theme.colorScheme.surface),
+          SafeArea(
+            top: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                IconButton(
-                  tooltip: 'Close',
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.keyboard_arrow_down),
-                ),
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      'Now playing',
-                      style: theme.textTheme.labelLarge?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 48),
-              ],
-            ),
-            // Body scrolls so the description expansion / channel card never
-            // pushes content off-screen on small viewports. The Draggable
-            // ScrollableSheet passes us its scrollController so the drag
-            // gesture and the scroll share the same axis.
-            Expanded(
-              child: SingleChildScrollView(
-                controller: scrollController,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Row(
                   children: [
-                    const SizedBox(height: 8),
-                    if (kIsWeb) ...[
-                      const Center(child: CoverVideoToggle()),
-                      const SizedBox(height: 12),
-                    ],
-                    // When fullscreen is on the embed has migrated to the
-                    // overlay; render only the cover here so we don't
-                    // double-mount the iframe.
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: kIsWeb &&
-                              ref.watch(videoTabEnabledProvider) &&
-                              !isFullscreen
-                          ? YouTubeEmbed(videoId: track.id)
-                          : const CoverArt(),
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.keyboard_arrow_down),
                     ),
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: _Marquee(
-                        text: track.title,
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Track: ${track.title}')),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: InkWell(
-                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Artist: ${track.uploader}')),
-                        ),
+                    Expanded(
+                      child: Center(
                         child: Text(
-                          track.uploader.isEmpty ? 'Unknown' : track.uploader,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.left,
-                          style: theme.textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
+                          'Now playing',
+                          style: theme.textTheme.labelLarge?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 6),
-                    _TrackMetaLine(
-                      artist: state.artist,
-                      album: state.album,
-                      releaseYear: state.releaseYear,
-                      viewCount: state.viewCount,
-                    ),
-                    const SizedBox(height: 24),
-                    kIsWeb && ref.watch(videoTabEnabledProvider)
-                        ? const SizedBox.shrink()
-                        : const Center(child: MusicDisk()),
-                    const SizedBox(height: 24),
-                    ExpandableDescription(description: state.description),
-                    const SizedBox(height: 24),
-                    const _ChannelSection(),
-                    const SizedBox(height: 32),
+                    // Settings button on the right balances the close
+                    // IconButton on the left. Always accessible — not gated
+                    // to video mode.
+                    const _PlayerSettingsButton(),
                   ],
                 ),
-              ),
+                // Body scrolls so the description expansion / channel card
+                // never pushes content off-screen. The Draggable
+                // ScrollableSheet passes its scrollController so drag and
+                // scroll share an axis.
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 8),
+                        if (kIsWeb) ...[
+                          const Center(child: CoverVideoToggle()),
+                          const SizedBox(height: 12),
+                        ],
+                        // Cover/video card sits on top of the ambient. When
+                        // fullscreen is on the embed has migrated to the
+                        // overlay; render only the cover here so we don't
+                        // double-mount the iframe.
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: kIsWeb &&
+                                  ref.watch(videoTabEnabledProvider) &&
+                                  !isFullscreen
+                              ? YouTubeEmbed(videoId: track.id)
+                              : const CoverArt(),
+                        ),
+                        const SizedBox(height: 16),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: _Marquee(
+                            text: track.title,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                            onTap: () => ScaffoldMessenger.of(context)
+                                .showSnackBar(
+                              SnackBar(content: Text('Track: ${track.title}')),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: InkWell(
+                            onTap: () =>
+                                ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Artist: ${track.uploader}'),
+                              ),
+                            ),
+                            child: Text(
+                              track.uploader.isEmpty
+                                  ? 'Unknown'
+                                  : track.uploader,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.left,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        _TrackMetaLine(
+                          artist: state.artist,
+                          album: state.album,
+                          releaseYear: state.releaseYear,
+                          viewCount: state.viewCount,
+                        ),
+                        const SizedBox(height: 24),
+                        kIsWeb && ref.watch(videoTabEnabledProvider)
+                            ? const SizedBox.shrink()
+                            : const Center(child: MusicDisk()),
+                        const SizedBox(height: 24),
+                        ExpandableDescription(description: state.description),
+                        const SizedBox(height: 24),
+                        const _ChannelSection(),
+                        const SizedBox(height: 32),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _DragHandleVisual extends StatelessWidget {
-  const _DragHandleVisual();
+/// Two-layer ambient lighting for the player surfaces: the blurred cover
+/// (AmbientBackdrop) sits at the back, with a vertical scrim gradient on
+/// top of it that fades the ambient to panel [surface] color at the
+/// bottom. Top of the player shows the cover's bleed; bottom is normal
+/// surface so the disk/description/channel cards read cleanly. Used by
+/// both BigPlayer and BigPlayerSidebar so the effect is consistent.
+class _PlayerAmbientBackground extends StatelessWidget {
+  const _PlayerAmbientBackground({required this.surface});
+  final Color surface;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      width: 40,
-      height: 4,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(2),
-      ),
+    return Stack(
+      children: [
+        // Blurred cover fills the player area.
+        const Positioned.fill(child: AmbientBackdrop()),
+        // Vertical gradient scrim: starts darker at the top (40% surface)
+        // so the cover's vivid colors are muted, then fades to full surface
+        // at the bottom for readability. Without starting mid-surface the
+        // ambient washes out the dark monochrome panel.
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  surface.withValues(alpha: 0.4),
+                  surface.withValues(alpha: 0.5),
+                  surface.withValues(alpha: 0.8),
+                  surface,
+                ],
+                stops: const [0.0, 0.35, 0.65, 1.0],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
+}
+
+/// Gear icon that opens the player settings menu. Currently exposes the
+/// ambient lighting toggle. Sits on the right side of the modal header,
+/// mirroring the close button on the left.
+class _PlayerSettingsButton extends ConsumerWidget {
+  const _PlayerSettingsButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return IconButton(
+      tooltip: 'Player settings',
+      onPressed: () => _showPlayerMenu(context, ref),
+      icon: const Icon(Icons.tune),
+    );
+  }
+}
+
+void _showPlayerMenu(BuildContext context, WidgetRef ref) {
+  final box = context.findRenderObject() as RenderBox?;
+  if (box == null) return;
+  final overlayBox =
+      Overlay.of(context).context.findRenderObject() as RenderBox?;
+  if (overlayBox == null) return;
+  final rect = box.localToGlobal(Offset.zero) & box.size;
+  showMenu<void>(
+    context: context,
+    position: RelativeRect.fromRect(rect, Offset.zero & overlayBox.size),
+    items: [
+      CheckedPopupMenuItem(
+        checked: ref.read(ambientLightingProvider),
+        child: const Text('Ambient lighting'),
+        onTap: () =>
+            ref.read(ambientLightingProvider.notifier).toggle(),
+      ),
+    ],
+  );
 }
 
 /// Permanent right-side panel for the big player on wide layouts. Reuses
@@ -461,95 +542,118 @@ class BigPlayerSidebar extends ConsumerWidget {
     final track = state.track;
     if (track == null) return const SizedBox.shrink();
     final theme = Theme.of(context);
-    final isFullscreen = ref.watch(fullscreenVideoProvider);
 
     return Container(
       decoration: BoxDecoration(
         color: theme.colorScheme.surface,
       ),
-      child: SafeArea(
-        top: false,
-        right: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-          // The sidebar column can outgrow the viewport in theater mode
-          // (wide video + desc + meta). Scrollable so the user can reach
-          // the description card at the bottom.
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (kIsWeb) ...[
-                  const Center(child: CoverVideoToggle()),
-                  const SizedBox(height: 12),
-                ],
-                if (kIsWeb &&
-                    ref.watch(videoTabEnabledProvider) &&
-                    !isFullscreen)
-                  YouTubeEmbed(
-                    videoId: track.id,
-                    showTheater: true,
-                  )
-                else
-                  const CoverArt(),
-                const SizedBox(height: 16),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: _Marquee(
-                    text: track.title,
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Track: ${track.title}')),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: InkWell(
-                    onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Artist: ${track.uploader}')),
-                    ),
-                    child: Text(
-                      track.uploader.isEmpty ? 'Unknown' : track.uploader,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.left,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.onSurfaceVariant,
+      // Same two-layer ambient background as the modal sheet so the
+      // effect is consistent across surfaces.
+      child: Stack(
+        children: [
+          _PlayerAmbientBackground(surface: theme.colorScheme.surface),
+          SafeArea(
+            top: false,
+            right: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              // The sidebar column can outgrow the viewport in theater
+              // mode (wide video + desc + meta). Scrollable so the user
+              // can reach the description card at the bottom.
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (kIsWeb)
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Center(child: CoverVideoToggle()),
+                          ),
+                          // Settings button on the right so the sidebar
+                          // surface has direct access to the ambient
+                          // toggle without opening the modal sheet.
+                          const _PlayerSettingsButton(),
+                        ],
+                      ),
+                    if (kIsWeb) const SizedBox(height: 12),
+                    // Cover/video card sits on top of the ambient. When
+                    // fullscreen is on the embed has migrated to the
+                    // overlay; render only the cover here.
+                    if (kIsWeb &&
+                        ref.watch(videoTabEnabledProvider) &&
+                        !ref.watch(fullscreenVideoProvider))
+                      YouTubeEmbed(
+                        videoId: track.id,
+                        showTheater: true,
+                      )
+                    else
+                      const CoverArt(),
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: _Marquee(
+                        text: track.title,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                        onTap: () =>
+                            ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Track: ${track.title}')),
+                        ),
                       ),
                     ),
-                  ),
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: InkWell(
+                        onTap: () =>
+                            ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Artist: ${track.uploader}'),
+                          ),
+                        ),
+                        child: Text(
+                          track.uploader.isEmpty
+                              ? 'Unknown'
+                              : track.uploader,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.left,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    _TrackMetaLine(
+                      artist: state.artist,
+                      album: state.album,
+                      releaseYear: state.releaseYear,
+                      viewCount: state.viewCount,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    const SizedBox(height: 16),
+                    kIsWeb && ref.watch(videoTabEnabledProvider)
+                        ? const SizedBox.shrink()
+                        : const Center(child: MusicDisk()),
+                    const SizedBox(height: 16),
+                    ExpandableDescription(
+                      description: state.description,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                    const SizedBox(height: 16),
+                    const _ChannelSection(
+                      padding: EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 6),
-                _TrackMetaLine(
-                  artist: state.artist,
-                  album: state.album,
-                  releaseYear: state.releaseYear,
-                  viewCount: state.viewCount,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-                const SizedBox(height: 16),
-                kIsWeb && ref.watch(videoTabEnabledProvider)
-                    ? const SizedBox.shrink()
-                    : const Center(child: MusicDisk()),
-                const SizedBox(height: 16),
-                ExpandableDescription(
-                  description: state.description,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-                const SizedBox(height: 16),
-                const _ChannelSection(
-                  padding: EdgeInsets.symmetric(horizontal: 8),
-                ),
-                const SizedBox(height: 32),
-              ],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

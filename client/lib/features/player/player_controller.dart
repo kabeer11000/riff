@@ -4,15 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart' as ja;
 
 import '../../api/endpoints/history.dart';
-import '../../api/endpoints/tracks.dart';
+import '../../api/endpoints/items.dart';
+import '../../api/models/item.dart';
 import '../../api/models/search_result.dart';
 import '../../core/url_state.dart';
-import '../search/search_controller.dart';
 import 'queue_provider.dart';
-
-final tracksApiProvider = Provider<TracksApi>(
-  (ref) => TracksApi(ref.watch(apiClientProvider)),
-);
 
 final audioPlayerProvider = Provider<ja.AudioPlayer>((ref) {
   final p = ja.AudioPlayer();
@@ -26,58 +22,37 @@ const _historySyncInterval = Duration(seconds: 30);
 class PlayerState {
   const PlayerState({
     this.track,
-    this.description = '',
-    this.artist = '',
-    this.album = '',
-    this.uploadDate = '',
-    this.viewCount = 0,
+    this.item,
     this.isLoading = false,
     this.isPlaying = false,
     this.error,
   });
 
+  // Display shape lifted from search/listings; track is what the player shows.
   final SearchResult? track;
-  // Surface fields lifted off the resolved TrackInfo so the player UI can
-  // render without making a second fetch.
-  final String description;
-  final String artist;
-  final String album;
-  /// YYYYMMDD string from yt-dlp; '' if unknown.
-  final String uploadDate;
-  final double viewCount;
+  // Canonical record fetched on play(); carries sources[] for the embed and
+  // any future provider-agnostic UI bits.
+  final Item? item;
   final bool isLoading;
   final bool isPlaying;
   final Object? error;
 
   PlayerState copyWith({
     SearchResult? track,
-    String? description,
-    String? artist,
-    String? album,
-    String? uploadDate,
-    double? viewCount,
+    Item? item,
     bool? isLoading,
     bool? isPlaying,
     Object? error,
     bool clearError = false,
     bool clearTrack = false,
+    bool clearItem = false,
   }) => PlayerState(
     track: clearTrack ? null : (track ?? this.track),
-    description: description ?? this.description,
-    artist: artist ?? this.artist,
-    album: album ?? this.album,
-    uploadDate: uploadDate ?? this.uploadDate,
-    viewCount: viewCount ?? this.viewCount,
+    item: clearItem ? null : (item ?? this.item),
     isLoading: isLoading ?? this.isLoading,
     isPlaying: isPlaying ?? this.isPlaying,
     error: clearError ? null : (error ?? this.error),
   );
-
-  /// Release year parsed from [uploadDate]. Null when unparseable.
-  int? get releaseYear {
-    if (uploadDate.length < 4) return null;
-    return int.tryParse(uploadDate.substring(0, 4));
-  }
 }
 
 final playerControllerProvider =
@@ -106,20 +81,12 @@ class PlayerController extends Notifier<PlayerState> {
 
   @override
   PlayerState build() {
-    // isPlaying is driven by the player; isLoading is set explicitly by play()
-    // because just_audio re-enters ProcessingState.buffering for every Range
-    // request during playback, which would otherwise keep the spinner up.
     _sub = _player.playerStateStream.listen((ps) {
       final wasPlaying = state.isPlaying;
-      // Track completion isn't always reflected by `playing` alone — force
-      // not-playing when the audio backend reports the item as completed,
-      // otherwise the disk keeps spinning past the end.
       final nowPlaying =
           ps.playing && ps.processingState != ja.ProcessingState.completed;
       state = state.copyWith(isPlaying: nowPlaying);
       if (wasPlaying && !nowPlaying) _onPauseOrStop();
-      // End of track: hand off to the queue. Stops naturally at the end of
-      // the queue because advance() is a no-op when there's no next track.
       if (ps.processingState == ja.ProcessingState.completed &&
           !_completedFired) {
         _completedFired = true;
@@ -134,11 +101,6 @@ class PlayerController extends Notifier<PlayerState> {
   }
 
   /// [contextKind] is one of "search" | "playlist" | "channel" | "library".
-  /// Defaults to search; callers wire playlists/channels as those screens land.
-  ///
-  /// [autoStart] false loads the source paused — used when restoring from the
-  /// URL on a cold load, where browsers block autoplay without a gesture and
-  /// silently starting audio on refresh would be hostile anyway.
   Future<void> play(
     SearchResult track, {
     String contextKind = 'search',
@@ -152,42 +114,24 @@ class PlayerController extends Notifier<PlayerState> {
     _contextKind = contextKind;
     _contextId = contextId;
     _contextTitle = contextTitle;
-    // State flips synchronously: the UI shows the new track + spinner and
-    // (on mobile) the big player opens immediately.
     state = state.copyWith(track: track, isLoading: true, clearError: true);
-    // Single choke point for URL sync: every play path lands here.
-    syncPlayerUrl(videoId: track.id);
-    // Pause any in-flight playback so the previous track stops bleeding
-    // through the gap before the new source is ready. Fire-and-forget so
-    // the state update is visible on the same frame.
+    syncPlayerUrl(itemId: track.id);
     unawaited(_player.stop());
-    // Serialize the rest of the load against any earlier play() so just_audio
-    // never sees overlapping setUrl calls.
     final previous = _audioChain;
     final completer = Completer<void>();
     _audioChain = completer.future;
     try {
       await previous;
       if (requestId != _playRequestId) return;
-      final api = ref.read(tracksApiProvider);
-      final info = await api.get(track.id);
+      // Fetch canonical Item for the embed (sources[]) denormalized fields,
+      // and to validate that the item still exists.
+      final api = ref.read(itemsApiProvider);
+      final item = await api.get(track.id);
       if (requestId != _playRequestId) return;
-      if (info.bestAudio == null) {
-        throw StateError('no audio format for ${track.id}');
-      }
       final url = api.streamUrl(track.id, kind: 'audio');
       await _player.setUrl(url);
       if (requestId != _playRequestId) return;
-      // Spinner off here: source is loaded and ready. Buffering state during
-      // playback is normal and would re-trigger the spinner via the stream.
-      state = state.copyWith(
-        isLoading: false,
-        description: info.description,
-        artist: info.artist,
-        album: info.album,
-        uploadDate: info.uploadDate,
-        viewCount: info.viewCount,
-      );
+      state = state.copyWith(item: item, isLoading: false);
       if (autoStart) {
         unawaited(_player.play());
         _recordPlay(position: 0);
@@ -195,25 +139,26 @@ class PlayerController extends Notifier<PlayerState> {
       }
     } catch (e) {
       if (requestId != _playRequestId) return;
-      state = state.copyWith(isLoading: false, error: e);
+      state = state.copyWith(isLoading: false, error: e, clearItem: true);
     } finally {
       completer.complete();
     }
   }
 
-  /// Load a track by id alone, paused. Used to restore `?v=<id>` on a cold
-  /// load, where all we have is the id — [TracksApi.get] fills in the rest.
-  Future<void> playById(String videoId) async {
+  /// Load a track by id alone, paused. Used to restore `?v=<itemId>` on a
+  /// cold load, where all we have is the id — ItemsApi.get fills in the rest.
+  Future<void> playById(String itemId) async {
     try {
-      final info = await ref.read(tracksApiProvider).get(videoId);
+      final item = await ref.read(itemsApiProvider).get(itemId);
+      final uploader = item.artists.isEmpty ? '' : item.artists.first;
       await play(
         SearchResult(
-          id: info.id,
-          title: info.title,
-          uploader: info.uploader,
-          duration: info.duration,
-          thumbnail: info.thumbnail,
-          type: 'audio',
+          id: item.id,
+          title: item.title,
+          uploader: uploader,
+          duration: item.duration,
+          thumbnail: item.thumbnail,
+          type: item.duration >= 600 ? 'video' : 'audio',
         ),
         autoStart: false,
       );
@@ -230,7 +175,6 @@ class PlayerController extends Notifier<PlayerState> {
       unawaited(_player.play());
       _recordPlay(position: _player.position.inMilliseconds / 1000.0);
     }
-    // isPlaying flips via the stream listener.
   }
 
   Future<void> stop() async {
@@ -240,6 +184,9 @@ class PlayerController extends Notifier<PlayerState> {
     await _player.stop();
     state = state.copyWith(
       track: null,
+      clearTrack: true,
+      item: null,
+      clearItem: true,
       isPlaying: false,
       isLoading: false,
       clearError: true,
@@ -278,12 +225,11 @@ class PlayerController extends Notifier<PlayerState> {
   void _recordPlay({required double position}) {
     final track = state.track;
     if (track == null) return;
-    // Fire and forget; HistoryApi failures are best-effort (lost tick is OK).
     unawaited(
       ref
           .read(historyApiProvider)
           .record(
-            videoId: track.id,
+            itemId: track.id,
             title: track.title,
             uploader: track.uploader,
             duration: track.duration,

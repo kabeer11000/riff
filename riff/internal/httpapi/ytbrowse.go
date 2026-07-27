@@ -1,23 +1,58 @@
 package httpapi
 
-import "net/http"
+import (
+	"net/http"
+
+	"riff/m/internal/domain"
+)
 
 func (s *Server) handleYTPlaylist(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	pl, err := s.ytdl.Playlist(r.Context(), id)
+	title, hits, err := s.ytdl.Playlist(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "playlist failed: "+err.Error())
 		return
 	}
-	s.writeCachedJSON(w, "ytpl|"+id, s.cfg.CacheMetadataTTL, pl)
+	entries := make([]domain.SearchResult, 0, len(hits))
+	for _, h := range hits {
+		uploader := h.Uploader
+		entries = append(entries, domain.SearchResult{
+			ID:        h.ID,
+			Title:     h.Title,
+			Uploader:  uploader,
+			Duration:  h.Duration,
+			Thumbnail: h.Thumbnail,
+			Type:      "video",
+		})
+	}
+	s.writeCachedJSON(w, "ytpl|"+id, s.cfg.CacheMetadataTTL, domain.ExternalPlaylist{
+		ID:      id,
+		Title:   title,
+		Entries: entries,
+	})
 }
 
 func (s *Server) handleYTChannel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	ch, err := s.ytdl.Channel(r.Context(), id)
+	title, hits, err := s.ytdl.Channel(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "channel failed: "+err.Error())
 		return
 	}
-	s.writeCachedJSON(w, "ytch|"+id, s.cfg.CacheMetadataTTL, ch)
+	entries := make([]domain.SearchResult, 0, len(hits))
+	for _, h := range hits {
+		entries = append(entries, domain.SearchResult{
+			ID:        h.ID,
+			Title:     h.Title,
+			Uploader:  h.Uploader,
+			Duration:  h.Duration,
+			Thumbnail: h.Thumbnail,
+			Type:      "video",
+		})
+	}
+	s.writeCachedJSON(w, "ytch|"+id, s.cfg.CacheMetadataTTL, domain.ExternalChannel{
+		ID:      id,
+		Title:   title,
+		Entries: entries,
+	})
 }

@@ -37,7 +37,7 @@ func (s *Server) handleListHistory(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRecordPlay(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		VideoID      string  `json:"videoId"`
+		ItemID       string  `json:"itemId"`
 		Title        string  `json:"title"`
 		Uploader     string  `json:"uploader"`
 		Duration     float64 `json:"duration"`
@@ -51,23 +51,27 @@ func (s *Server) handleRecordPlay(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	if body.VideoID == "" {
-		writeError(w, http.StatusBadRequest, "videoId is required")
+	if body.ItemID == "" {
+		writeError(w, http.StatusBadRequest, "itemId is required")
+		return
+	}
+	// Verify item exists; copy canonical metadata into the denormalized columns
+	// so /me/history reads are a single query.
+	it, err := s.repo.GetItem(r.Context(), body.ItemID)
+	if err != nil {
+		writeStoreError(w, err)
 		return
 	}
 	if body.Title == "" {
-		if ti, err := s.ytdl.Resolve(r.Context(), body.VideoID); err == nil {
-			body.Title = ti.Title
-			body.Uploader = ti.Uploader
-			body.Duration = ti.Duration
-			body.Thumbnail = ti.Thumbnail
-		}
+		body.Title = it.Title
+		body.Uploader = firstNonEmpty(body.Uploader, joinArtists(it.Artists))
+		body.Duration = it.Duration
 	}
 	if body.Thumbnail == "" {
-		body.Thumbnail = s.ytdl.Thumbnail(body.VideoID)
+		body.Thumbnail = it.Thumbnail
 	}
-	err := s.repo.RecordPlay(r.Context(), UserID(r.Context()), domain.PlayEvent{
-		VideoID:      body.VideoID,
+	err = s.repo.RecordPlay(r.Context(), UserID(r.Context()), domain.PlayEvent{
+		ItemID:       body.ItemID,
 		Title:        body.Title,
 		Uploader:     body.Uploader,
 		Duration:     body.Duration,
@@ -85,7 +89,7 @@ func (s *Server) handleRecordPlay(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteHistoryTrack(w http.ResponseWriter, r *http.Request) {
-	if err := s.repo.DeleteHistoryTrack(r.Context(), UserID(r.Context()), r.PathValue("videoId")); err != nil {
+	if err := s.repo.DeleteHistoryTrack(r.Context(), UserID(r.Context()), r.PathValue("itemId")); err != nil {
 		writeStoreError(w, err)
 		return
 	}

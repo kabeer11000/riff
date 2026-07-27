@@ -6,11 +6,28 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"riff/m/internal/cache"
 	"riff/m/internal/store"
 )
+
+// firstNonEmpty returns the first non-empty string in vals, or "".
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// joinArtists joins an artists slice with ", " for the denormalized uploader
+// column on join tables.
+func joinArtists(artists []string) string {
+	return strings.Join(artists, ", ")
+}
 
 // writeJSON encodes v as JSON with the given status.
 func writeJSON(w http.ResponseWriter, status int, v any) {

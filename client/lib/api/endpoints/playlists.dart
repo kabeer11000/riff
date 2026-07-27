@@ -15,7 +15,26 @@ class PlaylistsApi {
         .map((e) => Playlist.fromJson(e as Map<String, dynamic>))
         .toList();
   }
+
+  Future<void> addTrack(
+    String playlistId,
+    String itemId, {
+    String title = '',
+    String uploader = '',
+    double duration = 0,
+    String thumbnail = '',
+  }) {
+    final body = <String, dynamic>{
+      'itemId': itemId,
+      if (title.isNotEmpty) 'title': title,
+      if (uploader.isNotEmpty) 'uploader': uploader,
+      if (duration > 0) 'duration': duration,
+      if (thumbnail.isNotEmpty) 'thumbnail': thumbnail,
+    };
+    return _client.postJson('/playlists/$playlistId/tracks', body);
+  }
 }
 
-final playlistsApiProvider =
-    Provider<PlaylistsApi>((ref) => PlaylistsApi(ref.watch(apiClientProvider)));
+final playlistsApiProvider = Provider<PlaylistsApi>(
+  (ref) => PlaylistsApi(ref.watch(apiClientProvider)),
+);

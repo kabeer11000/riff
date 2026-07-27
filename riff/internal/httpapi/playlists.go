@@ -94,7 +94,7 @@ func (s *Server) handleDeletePlaylist(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAddTrack(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		VideoID   string  `json:"videoId"`
+		ItemID    string  `json:"itemId"`
 		Title     string  `json:"title"`
 		Uploader  string  `json:"uploader"`
 		Duration  float64 `json:"duration"`
@@ -104,25 +104,25 @@ func (s *Server) handleAddTrack(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
-	if body.VideoID == "" {
-		writeError(w, http.StatusBadRequest, "videoId is required")
+	if body.ItemID == "" {
+		writeError(w, http.StatusBadRequest, "itemId is required")
 		return
 	}
-	// Denormalize metadata so playlist listings don't need to re-resolve. If the
-	// client didn't supply a title, resolve it once here.
+	it, err := s.repo.GetItem(r.Context(), body.ItemID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
 	if body.Title == "" {
-		if ti, err := s.ytdl.Resolve(r.Context(), body.VideoID); err == nil {
-			body.Title = ti.Title
-			body.Uploader = ti.Uploader
-			body.Duration = ti.Duration
-			body.Thumbnail = ti.Thumbnail
-		}
+		body.Title = it.Title
+		body.Uploader = firstNonEmpty(body.Uploader, joinArtists(it.Artists))
+		body.Duration = it.Duration
 	}
 	if body.Thumbnail == "" {
-		body.Thumbnail = s.ytdl.Thumbnail(body.VideoID)
+		body.Thumbnail = it.Thumbnail
 	}
 	t := domain.PlaylistTrack{
-		VideoID:   body.VideoID,
+		ItemID:    body.ItemID,
 		Title:     body.Title,
 		Uploader:  body.Uploader,
 		Duration:  body.Duration,
@@ -136,7 +136,7 @@ func (s *Server) handleAddTrack(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRemoveTrack(w http.ResponseWriter, r *http.Request) {
-	err := s.repo.RemovePlaylistTrack(r.Context(), r.PathValue("id"), UserID(r.Context()), r.PathValue("videoId"))
+	err := s.repo.RemovePlaylistTrack(r.Context(), r.PathValue("id"), UserID(r.Context()), r.PathValue("itemId"))
 	if err != nil {
 		writeStoreError(w, err)
 		return

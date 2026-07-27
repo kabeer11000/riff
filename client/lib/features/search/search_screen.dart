@@ -33,20 +33,14 @@ Future<void> openSearch(BuildContext context) {
       barrierColor: Colors.black54,
       builder: (_) => Dialog(
         insetPadding: const EdgeInsets.all(32),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: const SizedBox(
-          width: 600,
-          height: 720,
-          child: _SearchBody(),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: const SizedBox(width: 600, height: 720, child: _SearchBody()),
       ),
     );
   }
-  return Navigator.of(context).push(
-    MaterialPageRoute<void>(builder: (_) => const SearchScreen()),
-  );
+  return Navigator.of(
+    context,
+  ).push(MaterialPageRoute<void>(builder: (_) => const SearchScreen()));
 }
 
 class _SearchBody extends ConsumerStatefulWidget {
@@ -59,8 +53,9 @@ class _SearchBody extends ConsumerStatefulWidget {
 class _SearchBodyState extends ConsumerState<_SearchBody> {
   // Controller text is seeded from the persisted [searchInputProvider] so
   // reopening search brings back whatever the user last had typed.
-  late final _controller =
-      TextEditingController(text: ref.read(searchInputProvider));
+  late final _controller = TextEditingController(
+    text: ref.read(searchInputProvider),
+  );
   final _focusNode = FocusNode();
   Timer? _debounce;
   bool _showClear = false;
@@ -133,7 +128,7 @@ class _SearchBodyState extends ConsumerState<_SearchBody> {
                   textInputAction: TextInputAction.search,
                   style: theme.textTheme.bodyLarge,
                   decoration: InputDecoration(
-                    hintText: 'Search YouTube',
+                    hintText: 'Search music',
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -157,7 +152,9 @@ class _SearchBodyState extends ConsumerState<_SearchBody> {
           child: async.when(
             data: (results) {
               if (query.isEmpty) {
-                return const _Empty(message: 'Search for songs, artists, or videos.');
+                return const _Empty(
+                  message: 'Search for songs, artists, or videos.',
+                );
               }
               if (results.isEmpty) {
                 return const _Empty(message: 'No results.');

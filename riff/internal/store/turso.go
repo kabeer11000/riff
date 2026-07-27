@@ -5,34 +5,43 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base32"
+	"encoding/json"
 	"errors"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/tursodatabase/libsql-client-go/libsql"
 
 	"riff/m/internal/domain"
 )
 
-// SQLite is the modernc.org/sqlite-backed Repository implementation.
-type SQLite struct {
+// Turso is the libsql-client-go-backed Repository implementation.
+// Connects to a remote Turso instance via libsql:// + auth token.
+type Turso struct {
 	db *sql.DB
 }
 
-func OpenSQLite(path string) (*SQLite, error) {
-	db, err := sql.Open("sqlite", path)
+// OpenTurso dials libsql://url with ?authToken=token, applies the schema, and
+// returns a Repository. SetMaxOpenConns(1) — libsql HTTP transport serializes
+// writes safely per connection; capping avoids lock contention the same way
+// modernc/sqlite did.
+func OpenTurso(dbURL, authToken string) (*Turso, error) {
+	dsn := dbURL
+	if authToken != "" {
+		dsn += "?authToken=" + authToken
+	}
+	db, err := sql.Open("libsql", dsn)
 	if err != nil {
 		return nil, err
 	}
-	// modernc sqlite is single-connection-friendly; cap to avoid "database is locked".
 	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, err
 	}
-	return &SQLite{db: db}, nil
+	return &Turso{db: db}, nil
 }
 
-func (s *SQLite) Close() error { return s.db.Close() }
+func (s *Turso) Close() error { return s.db.Close() }
 
 func newID() string {
 	b := make([]byte, 10)
@@ -47,16 +56,33 @@ func parseTime(s string) time.Time {
 	return t
 }
 
+func encodeArtists(artists []string) string {
+	if len(artists) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(artists)
+	return string(b)
+}
+
+func decodeArtists(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	_ = json.Unmarshal([]byte(s), &out)
+	return out
+}
+
 // --- users ---
 
-func (s *SQLite) EnsureUser(ctx context.Context, id string) error {
+func (s *Turso) EnsureUser(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO users (id, created_at) VALUES (?, ?) ON CONFLICT(id) DO NOTHING`,
 		id, now())
 	return err
 }
 
-func (s *SQLite) GetProfile(ctx context.Context, id string) (domain.Profile, error) {
+func (s *Turso) GetProfile(ctx context.Context, id string) (domain.Profile, error) {
 	var p domain.Profile
 	var created string
 	err := s.db.QueryRowContext(ctx,
@@ -72,7 +98,7 @@ func (s *SQLite) GetProfile(ctx context.Context, id string) (domain.Profile, err
 	return p, nil
 }
 
-func (s *SQLite) UpdateProfile(ctx context.Context, id, displayName, avatarURL string) (domain.Profile, error) {
+func (s *Turso) UpdateProfile(ctx context.Context, id, displayName, avatarURL string) (domain.Profile, error) {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE users SET display_name = ?, avatar_url = ? WHERE id = ?`,
 		displayName, avatarURL, id)
@@ -82,9 +108,65 @@ func (s *SQLite) UpdateProfile(ctx context.Context, id, displayName, avatarURL s
 	return s.GetProfile(ctx, id)
 }
 
+// --- items ---
+
+func (s *Turso) GetItem(ctx context.Context, id string) (domain.Item, error) {
+	var it domain.Item
+	var artists, created, updated string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, title, artists, album, duration, thumbnail, created_at, updated_at
+		 FROM items WHERE id = ?`, id).
+		Scan(&it.ID, &it.Title, &artists, &it.Album, &it.Duration, &it.Thumbnail,
+			&created, &updated)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Item{}, ErrNotFound
+	}
+	if err != nil {
+		return domain.Item{}, err
+	}
+	_ = created
+	_ = updated
+	it.Artists = decodeArtists(artists)
+
+	srcs, err := s.sourcesForItem(ctx, id)
+	if err != nil {
+		return domain.Item{}, err
+	}
+	it.Sources = srcs
+	return it, nil
+}
+
+func (s *Turso) sourcesForItem(ctx context.Context, itemID string) ([]domain.Source, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT provider, external_id, url, metadata FROM sources WHERE item_id = ? ORDER BY created_at ASC`,
+		itemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []domain.Source{}
+	for rows.Next() {
+		var (
+			src     domain.Source
+			metaRaw string
+		)
+		if err := rows.Scan(&src.Provider, &src.ExternalID, &src.URL, &metaRaw); err != nil {
+			return nil, err
+		}
+		if metaRaw != "" && metaRaw != "{}" {
+			var meta map[string]any
+			if err := json.Unmarshal([]byte(metaRaw), &meta); err == nil {
+				src.Metadata = meta
+			}
+		}
+		out = append(out, src)
+	}
+	return out, rows.Err()
+}
+
 // --- playlists ---
 
-func (s *SQLite) ownerOf(ctx context.Context, playlistID string) (string, error) {
+func (s *Turso) ownerOf(ctx context.Context, playlistID string) (string, error) {
 	var owner string
 	err := s.db.QueryRowContext(ctx,
 		`SELECT owner_id FROM playlists WHERE id = ?`, playlistID).Scan(&owner)
@@ -94,7 +176,7 @@ func (s *SQLite) ownerOf(ctx context.Context, playlistID string) (string, error)
 	return owner, err
 }
 
-func (s *SQLite) assertOwner(ctx context.Context, playlistID, ownerID string) error {
+func (s *Turso) assertOwner(ctx context.Context, playlistID, ownerID string) error {
 	owner, err := s.ownerOf(ctx, playlistID)
 	if err != nil {
 		return err
@@ -105,7 +187,7 @@ func (s *SQLite) assertOwner(ctx context.Context, playlistID, ownerID string) er
 	return nil
 }
 
-func (s *SQLite) CreatePlaylist(ctx context.Context, ownerID, name, description, visibility string) (domain.Playlist, error) {
+func (s *Turso) CreatePlaylist(ctx context.Context, ownerID, name, description, visibility string) (domain.Playlist, error) {
 	if visibility == "" {
 		visibility = domain.VisibilityPrivate
 	}
@@ -121,7 +203,7 @@ func (s *SQLite) CreatePlaylist(ctx context.Context, ownerID, name, description,
 	return s.GetPlaylist(ctx, id)
 }
 
-func (s *SQLite) GetPlaylist(ctx context.Context, id string) (domain.Playlist, error) {
+func (s *Turso) GetPlaylist(ctx context.Context, id string) (domain.Playlist, error) {
 	p, err := s.scanPlaylist(ctx, `SELECT id, owner_id, name, description, cover_url, visibility,
 		COALESCE(share_token,''), created_at, updated_at FROM playlists WHERE id = ?`, id)
 	if err != nil {
@@ -135,7 +217,7 @@ func (s *SQLite) GetPlaylist(ctx context.Context, id string) (domain.Playlist, e
 	return p, nil
 }
 
-func (s *SQLite) GetPlaylistByShareToken(ctx context.Context, token string) (domain.Playlist, error) {
+func (s *Turso) GetPlaylistByShareToken(ctx context.Context, token string) (domain.Playlist, error) {
 	p, err := s.scanPlaylist(ctx, `SELECT id, owner_id, name, description, cover_url, visibility,
 		COALESCE(share_token,''), created_at, updated_at FROM playlists WHERE share_token = ?`, token)
 	if err != nil {
@@ -149,7 +231,7 @@ func (s *SQLite) GetPlaylistByShareToken(ctx context.Context, token string) (dom
 	return p, nil
 }
 
-func (s *SQLite) scanPlaylist(ctx context.Context, query, arg string) (domain.Playlist, error) {
+func (s *Turso) scanPlaylist(ctx context.Context, query, arg string) (domain.Playlist, error) {
 	var p domain.Playlist
 	var created, updated string
 	err := s.db.QueryRowContext(ctx, query, arg).Scan(
@@ -166,9 +248,9 @@ func (s *SQLite) scanPlaylist(ctx context.Context, query, arg string) (domain.Pl
 	return p, nil
 }
 
-func (s *SQLite) playlistTracks(ctx context.Context, playlistID string) ([]domain.PlaylistTrack, error) {
+func (s *Turso) playlistTracks(ctx context.Context, playlistID string) ([]domain.PlaylistTrack, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT video_id, position, title, uploader, duration, thumbnail, added_at
+		`SELECT item_id, position, title, uploader, duration, thumbnail, added_at
 		 FROM playlist_tracks WHERE playlist_id = ? ORDER BY position ASC`, playlistID)
 	if err != nil {
 		return nil, err
@@ -178,7 +260,7 @@ func (s *SQLite) playlistTracks(ctx context.Context, playlistID string) ([]domai
 	for rows.Next() {
 		var t domain.PlaylistTrack
 		var added string
-		if err := rows.Scan(&t.VideoID, &t.Position, &t.Title, &t.Uploader, &t.Duration, &t.Thumbnail, &added); err != nil {
+		if err := rows.Scan(&t.ItemID, &t.Position, &t.Title, &t.Uploader, &t.Duration, &t.Thumbnail, &added); err != nil {
 			return nil, err
 		}
 		t.AddedAt = parseTime(added)
@@ -187,8 +269,7 @@ func (s *SQLite) playlistTracks(ctx context.Context, playlistID string) ([]domai
 	return tracks, rows.Err()
 }
 
-// listPlaylists returns playlist metadata only (no tracks) to avoid N+1 on listings.
-func (s *SQLite) listPlaylists(ctx context.Context, query string, args ...any) ([]domain.Playlist, error) {
+func (s *Turso) listPlaylists(ctx context.Context, query string, args ...any) ([]domain.Playlist, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -209,7 +290,7 @@ func (s *SQLite) listPlaylists(ctx context.Context, query string, args ...any) (
 	return out, rows.Err()
 }
 
-func (s *SQLite) ListPlaylistsByOwner(ctx context.Context, ownerID string, onlyPublic bool) ([]domain.Playlist, error) {
+func (s *Turso) ListPlaylistsByOwner(ctx context.Context, ownerID string, onlyPublic bool) ([]domain.Playlist, error) {
 	q := `SELECT id, owner_id, name, description, cover_url, visibility,
 		COALESCE(share_token,''), created_at, updated_at FROM playlists WHERE owner_id = ?`
 	if onlyPublic {
@@ -219,7 +300,7 @@ func (s *SQLite) ListPlaylistsByOwner(ctx context.Context, ownerID string, onlyP
 	return s.listPlaylists(ctx, q, ownerID)
 }
 
-func (s *SQLite) UpdatePlaylist(ctx context.Context, id, ownerID, name, description, coverURL, visibility string) (domain.Playlist, error) {
+func (s *Turso) UpdatePlaylist(ctx context.Context, id, ownerID, name, description, coverURL, visibility string) (domain.Playlist, error) {
 	if err := s.assertOwner(ctx, id, ownerID); err != nil {
 		return domain.Playlist{}, err
 	}
@@ -233,7 +314,7 @@ func (s *SQLite) UpdatePlaylist(ctx context.Context, id, ownerID, name, descript
 	return s.GetPlaylist(ctx, id)
 }
 
-func (s *SQLite) DeletePlaylist(ctx context.Context, id, ownerID string) error {
+func (s *Turso) DeletePlaylist(ctx context.Context, id, ownerID string) error {
 	if err := s.assertOwner(ctx, id, ownerID); err != nil {
 		return err
 	}
@@ -254,7 +335,7 @@ func (s *SQLite) DeletePlaylist(ctx context.Context, id, ownerID string) error {
 	return tx.Commit()
 }
 
-func (s *SQLite) SetShareToken(ctx context.Context, id, ownerID, token string) (domain.Playlist, error) {
+func (s *Turso) SetShareToken(ctx context.Context, id, ownerID, token string) (domain.Playlist, error) {
 	if err := s.assertOwner(ctx, id, ownerID); err != nil {
 		return domain.Playlist{}, err
 	}
@@ -268,7 +349,7 @@ func (s *SQLite) SetShareToken(ctx context.Context, id, ownerID, token string) (
 
 // --- playlist tracks ---
 
-func (s *SQLite) AddPlaylistTrack(ctx context.Context, playlistID, ownerID string, t domain.PlaylistTrack) error {
+func (s *Turso) AddPlaylistTrack(ctx context.Context, playlistID, ownerID string, t domain.PlaylistTrack) error {
 	if err := s.assertOwner(ctx, playlistID, ownerID); err != nil {
 		return err
 	}
@@ -280,23 +361,23 @@ func (s *SQLite) AddPlaylistTrack(ctx context.Context, playlistID, ownerID strin
 		return err
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO playlist_tracks (playlist_id, video_id, position, title, uploader, duration, thumbnail, added_by, added_at)
+		`INSERT INTO playlist_tracks (playlist_id, item_id, position, title, uploader, duration, thumbnail, added_by, added_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(playlist_id, video_id) DO NOTHING`,
-		playlistID, t.VideoID, next, t.Title, t.Uploader, t.Duration, t.Thumbnail, ownerID, now())
+		 ON CONFLICT(playlist_id, item_id) DO NOTHING`,
+		playlistID, t.ItemID, next, t.Title, t.Uploader, t.Duration, t.Thumbnail, ownerID, now())
 	return err
 }
 
-func (s *SQLite) RemovePlaylistTrack(ctx context.Context, playlistID, ownerID, videoID string) error {
+func (s *Turso) RemovePlaylistTrack(ctx context.Context, playlistID, ownerID, itemID string) error {
 	if err := s.assertOwner(ctx, playlistID, ownerID); err != nil {
 		return err
 	}
 	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM playlist_tracks WHERE playlist_id = ? AND video_id = ?`, playlistID, videoID)
+		`DELETE FROM playlist_tracks WHERE playlist_id = ? AND item_id = ?`, playlistID, itemID)
 	return err
 }
 
-func (s *SQLite) ReorderPlaylistTracks(ctx context.Context, playlistID, ownerID string, videoIDsInOrder []string) error {
+func (s *Turso) ReorderPlaylistTracks(ctx context.Context, playlistID, ownerID string, itemIDsInOrder []string) error {
 	if err := s.assertOwner(ctx, playlistID, ownerID); err != nil {
 		return err
 	}
@@ -305,10 +386,10 @@ func (s *SQLite) ReorderPlaylistTracks(ctx context.Context, playlistID, ownerID 
 		return err
 	}
 	defer tx.Rollback()
-	for i, vid := range videoIDsInOrder {
+	for i, id := range itemIDsInOrder {
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE playlist_tracks SET position = ? WHERE playlist_id = ? AND video_id = ?`,
-			i, playlistID, vid); err != nil {
+			`UPDATE playlist_tracks SET position = ? WHERE playlist_id = ? AND item_id = ?`,
+			i, playlistID, id); err != nil {
 			return err
 		}
 	}
@@ -320,26 +401,26 @@ func (s *SQLite) ReorderPlaylistTracks(ctx context.Context, playlistID, ownerID 
 
 // --- library ---
 
-func (s *SQLite) LikeTrack(ctx context.Context, userID string, t domain.LikedTrack) error {
+func (s *Turso) LikeTrack(ctx context.Context, userID string, t domain.LikedTrack) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO liked_tracks (user_id, video_id, title, uploader, duration, thumbnail, liked_at)
+		`INSERT INTO liked_tracks (user_id, item_id, title, uploader, duration, thumbnail, liked_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(user_id, video_id) DO UPDATE SET
+		 ON CONFLICT(user_id, item_id) DO UPDATE SET
 		   title=excluded.title, uploader=excluded.uploader,
 		   duration=excluded.duration, thumbnail=excluded.thumbnail`,
-		userID, t.VideoID, t.Title, t.Uploader, t.Duration, t.Thumbnail, now())
+		userID, t.ItemID, t.Title, t.Uploader, t.Duration, t.Thumbnail, now())
 	return err
 }
 
-func (s *SQLite) UnlikeTrack(ctx context.Context, userID, videoID string) error {
+func (s *Turso) UnlikeTrack(ctx context.Context, userID, itemID string) error {
 	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM liked_tracks WHERE user_id = ? AND video_id = ?`, userID, videoID)
+		`DELETE FROM liked_tracks WHERE user_id = ? AND item_id = ?`, userID, itemID)
 	return err
 }
 
-func (s *SQLite) ListLikedTracks(ctx context.Context, userID string) ([]domain.LikedTrack, error) {
+func (s *Turso) ListLikedTracks(ctx context.Context, userID string) ([]domain.LikedTrack, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT video_id, title, uploader, duration, thumbnail, liked_at
+		`SELECT item_id, title, uploader, duration, thumbnail, liked_at
 		 FROM liked_tracks WHERE user_id = ? ORDER BY liked_at DESC`, userID)
 	if err != nil {
 		return nil, err
@@ -349,7 +430,7 @@ func (s *SQLite) ListLikedTracks(ctx context.Context, userID string) ([]domain.L
 	for rows.Next() {
 		var t domain.LikedTrack
 		var liked string
-		if err := rows.Scan(&t.VideoID, &t.Title, &t.Uploader, &t.Duration, &t.Thumbnail, &liked); err != nil {
+		if err := rows.Scan(&t.ItemID, &t.Title, &t.Uploader, &t.Duration, &t.Thumbnail, &liked); err != nil {
 			return nil, err
 		}
 		t.LikedAt = parseTime(liked)
@@ -358,9 +439,9 @@ func (s *SQLite) ListLikedTracks(ctx context.Context, userID string) ([]domain.L
 	return out, rows.Err()
 }
 
-func (s *SQLite) SavePlaylist(ctx context.Context, userID, playlistID string) error {
+func (s *Turso) SavePlaylist(ctx context.Context, userID, playlistID string) error {
 	if _, err := s.ownerOf(ctx, playlistID); err != nil {
-		return err // ErrNotFound if playlist missing
+		return err
 	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO saved_playlists (user_id, playlist_id, saved_at) VALUES (?, ?, ?)
@@ -369,13 +450,13 @@ func (s *SQLite) SavePlaylist(ctx context.Context, userID, playlistID string) er
 	return err
 }
 
-func (s *SQLite) UnsavePlaylist(ctx context.Context, userID, playlistID string) error {
+func (s *Turso) UnsavePlaylist(ctx context.Context, userID, playlistID string) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM saved_playlists WHERE user_id = ? AND playlist_id = ?`, userID, playlistID)
 	return err
 }
 
-func (s *SQLite) ListSavedPlaylists(ctx context.Context, userID string) ([]domain.Playlist, error) {
+func (s *Turso) ListSavedPlaylists(ctx context.Context, userID string) ([]domain.Playlist, error) {
 	return s.listPlaylists(ctx,
 		`SELECT p.id, p.owner_id, p.name, p.description, p.cover_url, p.visibility,
 			COALESCE(p.share_token,''), p.created_at, p.updated_at
@@ -386,35 +467,31 @@ func (s *SQLite) ListSavedPlaylists(ctx context.Context, userID string) ([]domai
 
 // --- history ---
 
-func (s *SQLite) RecordPlay(ctx context.Context, userID string, p domain.PlayEvent) error {
+func (s *Turso) RecordPlay(ctx context.Context, userID string, p domain.PlayEvent) error {
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO listening_history
-			(user_id, video_id, title, uploader, duration, thumbnail,
+			(user_id, item_id, title, uploader, duration, thumbnail,
 			 played_at, last_position, context_kind, context_id, context_title)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		userID, p.VideoID, p.Title, p.Uploader, p.Duration, p.Thumbnail,
+		userID, p.ItemID, p.Title, p.Uploader, p.Duration, p.Thumbnail,
 		now(), p.Position, p.ContextKind, p.ContextID, p.ContextTitle)
 	return err
 }
 
-// ListHistory groups by video_id, returning one entry per distinct video,
-// ordered by most-recent play. Each entry's metadata + context is taken from
-// the most-recent row for that video. SQLite doesn't support ANY_VALUE, so we
-// use a subquery to pick the row directly.
-func (s *SQLite) ListHistory(ctx context.Context, userID string, limit int) ([]domain.HistoryEntry, error) {
+func (s *Turso) ListHistory(ctx context.Context, userID string, limit int) ([]domain.HistoryEntry, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT h.video_id, h.title, h.uploader, h.duration, h.thumbnail,
+		`SELECT h.item_id, h.title, h.uploader, h.duration, h.thumbnail,
 		        h.played_at, h.last_position,
 		        (SELECT COUNT(*) FROM listening_history h2
-		         WHERE h2.user_id = h.user_id AND h2.video_id = h.video_id),
+		         WHERE h2.user_id = h.user_id AND h2.item_id = h.item_id),
 		        h.context_kind, h.context_id, h.context_title
 		 FROM listening_history h
 		 WHERE h.user_id = ?
 		   AND h.played_at = (SELECT MAX(played_at) FROM listening_history h2
-		                      WHERE h2.user_id = h.user_id AND h2.video_id = h.video_id)
+		                      WHERE h2.user_id = h.user_id AND h2.item_id = h.item_id)
 		 ORDER BY h.played_at DESC
 		 LIMIT ?`, userID, limit)
 	if err != nil {
@@ -425,7 +502,7 @@ func (s *SQLite) ListHistory(ctx context.Context, userID string, limit int) ([]d
 	for rows.Next() {
 		var e domain.HistoryEntry
 		var lastPlayed string
-		if err := rows.Scan(&e.VideoID, &e.Title, &e.Uploader, &e.Duration, &e.Thumbnail,
+		if err := rows.Scan(&e.ItemID, &e.Title, &e.Uploader, &e.Duration, &e.Thumbnail,
 			&lastPlayed, &e.LastPosition, &e.PlayCount,
 			&e.ContextKind, &e.ContextID, &e.ContextTitle); err != nil {
 			return nil, err
@@ -437,7 +514,7 @@ func (s *SQLite) ListHistory(ctx context.Context, userID string, limit int) ([]d
 	return out, rows.Err()
 }
 
-func (s *SQLite) LatestContinueCard(ctx context.Context, userID string) (domain.ContinueCard, error) {
+func (s *Turso) LatestContinueCard(ctx context.Context, userID string) (domain.ContinueCard, error) {
 	var c domain.ContinueCard
 	var lastPlayed string
 	err := s.db.QueryRowContext(ctx,
@@ -460,15 +537,96 @@ func (s *SQLite) LatestContinueCard(ctx context.Context, userID string) (domain.
 	return c, nil
 }
 
-func (s *SQLite) DeleteHistoryTrack(ctx context.Context, userID, videoID string) error {
+func (s *Turso) DeleteHistoryTrack(ctx context.Context, userID, itemID string) error {
 	_, err := s.db.ExecContext(ctx,
-		`DELETE FROM listening_history WHERE user_id = ? AND video_id = ?`,
-		userID, videoID)
+		`DELETE FROM listening_history WHERE user_id = ? AND item_id = ?`,
+		userID, itemID)
 	return err
 }
 
-func (s *SQLite) ClearHistory(ctx context.Context, userID string) error {
+func (s *Turso) ClearHistory(ctx context.Context, userID string) error {
 	_, err := s.db.ExecContext(ctx,
 		`DELETE FROM listening_history WHERE user_id = ?`, userID)
+	return err
+}
+
+// --- indexer hooks ---
+
+func (s *Turso) LookupBySource(ctx context.Context, provider, externalID string) (string, bool, error) {
+	var itemID string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT item_id FROM sources WHERE provider = ? AND external_id = ?`,
+		provider, externalID).Scan(&itemID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return itemID, true, nil
+}
+
+func (s *Turso) LookupByCanonical(ctx context.Context, isrc, mbid string) (string, bool, error) {
+	if isrc == "" && mbid == "" {
+		return "", false, nil
+	}
+	q := `SELECT id FROM items WHERE `
+	args := []any{}
+	if isrc != "" {
+		q += `isrc = ?`
+		args = append(args, isrc)
+		if mbid != "" {
+			q += ` OR mbid = ?`
+			args = append(args, mbid)
+		}
+	} else {
+		q += `mbid = ?`
+		args = append(args, mbid)
+	}
+	q += ` LIMIT 1`
+	var itemID string
+	err := s.db.QueryRowContext(ctx, q, args...).Scan(&itemID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return itemID, true, nil
+}
+
+func (s *Turso) CreateItem(ctx context.Context, it domain.Item) (string, error) {
+	id := newID()
+	ts := now()
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO items (id, title, artists, album, duration, thumbnail, isrc, mbid, metadata, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, it.Title, encodeArtists(it.Artists), it.Album, it.Duration, it.Thumbnail,
+		"", "", "{}", ts, ts)
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func (s *Turso) AddSource(ctx context.Context, itemID string, src domain.Source) error {
+	metaJSON := "{}"
+	if len(src.Metadata) > 0 {
+		b, err := json.Marshal(src.Metadata)
+		if err != nil {
+			return err
+		}
+		metaJSON = string(b)
+	}
+	// ON CONFLICT DO UPDATE so re-indexing refreshes url + metadata. View
+	// counts and descriptions change over time; a re-search should pull
+	// fresh data without leaving stale rows behind.
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO sources (item_id, provider, external_id, url, metadata, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(provider, external_id) DO UPDATE SET
+		   url = excluded.url,
+		   metadata = excluded.metadata`,
+		itemID, src.Provider, src.ExternalID, src.URL, metaJSON, now())
 	return err
 }

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web/web.dart' as web;
 
+import '../../api/models/item.dart';
 import 'music_disk.dart';
 import 'player_controller.dart';
 import 'video_fullscreen_provider.dart';
@@ -32,13 +33,13 @@ const _embedRadius = 16.0;
 class YouTubeEmbed extends ConsumerStatefulWidget {
   const YouTubeEmbed({
     super.key,
-    required this.videoId,
+    required this.item,
     this.aspectRatio = 16 / 9,
     this.showTheater = false,
     this.fullscreen = false,
   });
 
-  final String videoId;
+  final Item item;
   final double aspectRatio;
   // Show the theater-mode toggle next to fullscreen. Only the desktop sidebar
   // surface passes true — theater mode has no meaning in the mobile sheet.
@@ -48,6 +49,10 @@ class YouTubeEmbed extends ConsumerStatefulWidget {
   // (we already own the whole viewport) and renders a "close fullscreen"
   // button in place of the regular fullscreen button.
   final bool fullscreen;
+
+  /// External YouTube video id derived from [item.sources]. Empty when the
+  /// item has no YouTube source — callers gate on this.
+  String get _extId => item.youtubeSource?.externalId ?? '';
 
   @override
   ConsumerState<YouTubeEmbed> createState() => _YouTubeEmbedState();
@@ -75,8 +80,8 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
   // on the red thumbnail while audio keeps playing.
   static int _mountCounter = 0;
 
-  // Tracks which videoId the iframe is currently configured for.
-  String? _currentVideoId;
+  // Tracks which YouTube external id the iframe is currently configured for.
+  String? _currentExtId;
   // Anchor for estimating where the video should be: the audio position and
   // wall-clock time at our last seek. Expected video position while playing =
   // _anchorSecs + elapsed wall time since _anchorWall.
@@ -117,7 +122,7 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
     // Register the factory once across the app lifetime — Flutter throws if
     // we re-register under the same viewType. The iframe element is static
     // so all HtmlElementView instances share the same DOM node; we just
-    // rewrite its src when videoId changes.
+    // rewrite its src when the YouTube external id changes.
     if (!_factoryRegistered) {
       ui_web.platformViewRegistry.registerViewFactory(
         _viewType,
@@ -165,8 +170,8 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
           // before issuing playVideo. Without this the iframe resumes from
           // wherever wall-clock says it should be, which can be off by
           // hundreds of ms from where audio actually is.
-          final pos = ref.read(audioPlayerProvider).position.inMilliseconds /
-              1000.0;
+          final pos =
+              ref.read(audioPlayerProvider).position.inMilliseconds / 1000.0;
           if (pos > 0) _postSeek(pos);
           _postCommand('playVideo');
           _setPlaying(true);
@@ -184,46 +189,38 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
           // audio is playing. Catches the case where the iframe silently
           // drops to a paused-on-thumbnail state after a mode toggle.
           _playWatchdog?.cancel();
-          _playWatchdog = Timer.periodic(
-            const Duration(milliseconds: 1500),
-            (_) {
-              // Use `mounted` (Flutter-disposal check) rather than just
-              // `_disposed`: a periodic Timer tick can race the disposal
-              // pipeline, and `ref` access after dispose throws.
-              if (!mounted || _disposed) {
-                _playWatchdog?.cancel();
-                return;
+          _playWatchdog = Timer.periodic(const Duration(milliseconds: 1500), (
+            _,
+          ) {
+            // Use `mounted` (Flutter-disposal check) rather than just
+            // `_disposed`: a periodic Timer tick can race the disposal
+            // pipeline, and `ref` access after dispose throws.
+            if (!mounted || _disposed) {
+              _playWatchdog?.cancel();
+              return;
+            }
+            if (!ref.read(playerControllerProvider).isPlaying) {
+              _playWatchdog?.cancel();
+              return;
+            }
+            // If iframe got stuck again (silent pause), reload to the
+            // current audio time. The watchdog cost is one postMessage
+            // per second which YT happily ignores when already playing.
+            final secs =
+                ref.read(audioPlayerProvider).position.inMilliseconds / 1000.0;
+            final expected = _expectedVideoSecs();
+            if ((secs - expected).abs() > 2.0) {
+              final track = ref.read(playerControllerProvider).track;
+              if (track != null) {
+                _postCommand('mute');
+                _postCommand('loadVideoById', [track.id, secs, 'default']);
+                _suppressDriftUntil = DateTime.now().add(_loadGrace);
+                _anchorSecs = secs;
+                _anchorWall = DateTime.now();
+                _postCommand('playVideo');
               }
-              if (!ref.read(playerControllerProvider).isPlaying) {
-                _playWatchdog?.cancel();
-                return;
-              }
-              // If iframe got stuck again (silent pause), reload to the
-              // current audio time. The watchdog cost is one postMessage
-              // per second which YT happily ignores when already playing.
-              final secs = ref
-                      .read(audioPlayerProvider)
-                      .position
-                      .inMilliseconds /
-                  1000.0;
-              final expected = _expectedVideoSecs();
-              if ((secs - expected).abs() > 2.0) {
-                final track = ref.read(playerControllerProvider).track;
-                if (track != null) {
-                  _postCommand('mute');
-                  _postCommand('loadVideoById', [
-                    track.id,
-                    secs,
-                    'default',
-                  ]);
-                  _suppressDriftUntil = DateTime.now().add(_loadGrace);
-                  _anchorSecs = secs;
-                  _anchorWall = DateTime.now();
-                  _postCommand('playVideo');
-                }
-              }
-            },
-          );
+            }
+          });
         } else {
           _postCommand('pauseVideo');
           _setPlaying(false);
@@ -243,9 +240,9 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
     // set) and YT never loads — leaving the iframe blank/white.
     // Use autoplay=audioPlaying so the URL matches the play state we'll
     // subsequently issue commands for.
-    if (widget.videoId.isNotEmpty) {
+    if (widget._extId.isNotEmpty) {
       final audioPlaying = ref.read(playerControllerProvider).isPlaying;
-      final desired = _embedUrl(widget.videoId, autoplay: audioPlaying);
+      final desired = _embedUrl(widget._extId, autoplay: audioPlaying);
       if (_iframe.src != desired) _iframe.src = desired;
     }
   }
@@ -264,11 +261,11 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
   @override
   void didUpdateWidget(YouTubeEmbed old) {
     super.didUpdateWidget(old);
-    if (old.videoId != widget.videoId) {
+    if (old._extId != widget._extId) {
       // Same gating as the listener: load with the right autoplay state.
       final isPlaying = ref.read(playerControllerProvider).isPlaying;
-      _loadVideo(widget.videoId, autoplay: isPlaying);
-      _iframe.src = _embedUrl(widget.videoId, autoplay: isPlaying);
+      _loadVideo(widget._extId, autoplay: isPlaying);
+      _iframe.src = _embedUrl(widget._extId, autoplay: isPlaying);
     }
   }
 
@@ -284,24 +281,24 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
     super.dispose();
   }
 
-  // Swap the iframe to a new videoId. The URL embeds autoplay=1 when audio
-  // is already playing so the iframe boots in sync; autoplay=0 otherwise so
-  // it doesn't race ahead while audio is still loading.
-  void _loadVideo(String videoId, {required bool autoplay}) {
-    _currentVideoId = videoId;
+  // Swap the iframe to a new external id. The URL embeds autoplay=1 when
+  // audio is already playing so the iframe boots in sync; autoplay=0
+  // otherwise so it doesn't race ahead while audio is still loading.
+  void _loadVideo(String extId, {required bool autoplay}) {
+    _currentExtId = extId;
     _iframe.dataset['mountEpoch'] = _mountEpoch.toString();
-    // Same videoId → reload cleanly. A mode toggle (fullscreen / theater /
+    // Same extId → reload cleanly. A mode toggle (fullscreen / theater /
     // cover) rebuilds the widget tree; relying on stale JS state on the
     // shared iframe across mounts leaves it stuck on the thumbnail or in a
     // blank-buffering state. A loadVideoById with the current play time as
     // the start second guarantees YT is in the right state from the
     // iframe's point of view.
-    if (_iframe.src.contains('/embed/$videoId?')) {
-      final pos = ref.read(audioPlayerProvider).position.inMilliseconds /
-          1000.0;
+    if (_iframe.src.contains('/embed/$extId?')) {
+      final pos =
+          ref.read(audioPlayerProvider).position.inMilliseconds / 1000.0;
       final startAt = pos > 0 ? pos : 0.0;
       _postCommand('mute');
-      _postCommand('loadVideoById', [videoId, startAt, 'default']);
+      _postCommand('loadVideoById', [extId, startAt, 'default']);
       _suppressDriftUntil = DateTime.now().add(_loadGrace);
       _anchorSecs = startAt;
       _anchorWall = DateTime.now();
@@ -312,7 +309,7 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
 
     // Different video, or first ever load: full sequence.
     _postCommand('mute');
-    _postCommand('loadVideoById', [videoId, 0, 'default']);
+    _postCommand('loadVideoById', [extId, 0, 'default']);
     _suppressDriftUntil = DateTime.now().add(_loadGrace);
     _anchorSecs = 0;
     _anchorWall = DateTime.now();
@@ -390,17 +387,21 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
 
   @override
   Widget build(BuildContext context) {
+    // Items without a YouTube source render empty — the Cover tab is the only
+    // meaningful surface. Callers gate on hasYoutube before mounting the embed.
+    if (widget._extId.isEmpty) return const SizedBox.shrink();
+
     // First-mount or track-id change: seed the iframe with the right autoplay
     // state to match audio. _iframe.src is shared across instances — guard
     // against re-writing it (which would reload the iframe and discard any
     // in-flight JS state from the previous mount).
     final audioPlaying = ref.read(playerControllerProvider).isPlaying;
-    final desiredSrc = _embedUrl(widget.videoId, autoplay: audioPlaying);
-    if (_currentVideoId == null) {
-      _loadVideo(widget.videoId, autoplay: audioPlaying);
+    final desiredSrc = _embedUrl(widget._extId, autoplay: audioPlaying);
+    if (_currentExtId == null) {
+      _loadVideo(widget._extId, autoplay: audioPlaying);
       if (_iframe.src != desiredSrc) _iframe.src = desiredSrc;
-    } else if (_currentVideoId != widget.videoId) {
-      _loadVideo(widget.videoId, autoplay: audioPlaying);
+    } else if (_currentExtId != widget._extId) {
+      _loadVideo(widget._extId, autoplay: audioPlaying);
       if (_iframe.src != desiredSrc) _iframe.src = desiredSrc;
     }
     final isFs = widget.fullscreen;
@@ -484,10 +485,7 @@ class _OverlayScrim extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.bottomCenter,
           end: Alignment.topCenter,
-          colors: [
-            Colors.black.withValues(alpha: 0.65),
-            Colors.transparent,
-          ],
+          colors: [Colors.black.withValues(alpha: 0.65), Colors.transparent],
         ),
       ),
       child: child,
@@ -582,19 +580,22 @@ class _EmbedBody extends ConsumerWidget {
               onDoubleTapDown: (d) {
                 final w =
                     (context.findRenderObject() as RenderBox?)?.size.width ?? 1;
-                final going =
-                    d.localPosition.dx < w / 2 ? -_seekStepSec : _seekStepSec;
+                final going = d.localPosition.dx < w / 2
+                    ? -_seekStepSec
+                    : _seekStepSec;
                 final dur = ref
                     .read(audioPlayerProvider)
                     .duration
                     ?.inMilliseconds;
-                final pos =
-                    ref.read(audioPlayerProvider).position.inMilliseconds;
+                final pos = ref
+                    .read(audioPlayerProvider)
+                    .position
+                    .inMilliseconds;
                 if (dur == null || dur <= 0) return;
                 final target = (pos + (going * 1000).round()).clamp(0, dur);
-                ref.read(audioPlayerProvider).seek(
-                  Duration(milliseconds: target),
-                );
+                ref
+                    .read(audioPlayerProvider)
+                    .seek(Duration(milliseconds: target));
                 onBumpControls();
               },
             ),
@@ -628,25 +629,19 @@ class _EmbedBody extends ConsumerWidget {
                         tooltip: theaterOn
                             ? 'Exit theater mode'
                             : 'Theater mode',
-                        onTap: () => ref
-                            .read(theaterModeProvider.notifier)
-                            .toggle(),
+                        onTap: () =>
+                            ref.read(theaterModeProvider.notifier).toggle(),
                       ),
                       const SizedBox(width: 8),
                     ],
                     _OverlayButton(
                       icon: isFullscreen ? Icons.close : Icons.fullscreen,
-                      tooltip:
-                          isFullscreen ? 'Exit fullscreen' : 'Fullscreen',
+                      tooltip: isFullscreen ? 'Exit fullscreen' : 'Fullscreen',
                       onTap: () {
                         if (isFullscreen) {
-                          ref
-                              .read(fullscreenVideoProvider.notifier)
-                              .set(false);
+                          ref.read(fullscreenVideoProvider.notifier).set(false);
                         } else {
-                          ref
-                              .read(fullscreenVideoProvider.notifier)
-                              .toggle();
+                          ref.read(fullscreenVideoProvider.notifier).toggle();
                         }
                       },
                     ),

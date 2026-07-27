@@ -35,7 +35,8 @@ class HomeScreen extends ConsumerWidget {
                 const _NarrowSearchRow(),
               Expanded(
                 child: async.when(
-                  loading: () => const Center(child: CircularProgressIndicator()),
+                  loading: () =>
+                      const Center(child: CircularProgressIndicator()),
                   error: (e, _) => _Empty(message: 'Failed: $e'),
                   data: (data) {
                     final top = topChannel(data.entries);
@@ -45,7 +46,8 @@ class HomeScreen extends ConsumerWidget {
                       data: (p) => p,
                       orElse: () => const <Playlist>[],
                     );
-                    final isEmpty = data.entries.isEmpty &&
+                    final isEmpty =
+                        data.entries.isEmpty &&
                         data.continueCard == null &&
                         top == null &&
                         playlists.isEmpty;
@@ -115,7 +117,7 @@ class _PseudoSearchBar extends ConsumerWidget {
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        hasText ? query : 'Search YouTube',
+                        hasText ? query : 'Search music',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodyLarge?.copyWith(
@@ -195,20 +197,38 @@ class _HomeBody extends StatelessWidget {
     if (topData != null) {
       children.add(_TopChannelHeader(uploader: topData.uploader));
       final topResults = topData.tracks.map(_toSearchResult).toList();
-      children.add(_GridOf(entries: topData.tracks, onTap: (i) {
-        ref.read(playbackQueueProvider.notifier).playFrom(topResults, i,
-            contextKind: 'channel', contextId: topData.uploader, contextTitle: topData.uploader);
-      }));
+      children.add(
+        _GridOf(
+          entries: topData.tracks,
+          onTap: (i) {
+            ref
+                .read(playbackQueueProvider.notifier)
+                .playFrom(
+                  topResults,
+                  i,
+                  contextKind: 'channel',
+                  contextId: topData.uploader,
+                  contextTitle: topData.uploader,
+                );
+          },
+        ),
+      );
     }
     if (data.entries.isNotEmpty) {
       // Search icon now lives in the top-level row above the body, so this
       // section header is purely a title — no trailing action needed.
       children.add(const _SectionHeader('Jump back in'));
       final historyResults = data.entries.map(_toSearchResult).toList();
-      children.add(_ListOf(entries: data.entries, onTap: (i) {
-        ref.read(playbackQueueProvider.notifier).playFrom(historyResults, i,
-            contextKind: 'history');
-      }));
+      children.add(
+        _ListOf(
+          entries: data.entries,
+          onTap: (i) {
+            ref
+                .read(playbackQueueProvider.notifier)
+                .playFrom(historyResults, i, contextKind: 'history');
+          },
+        ),
+      );
     }
     if (playlists.isNotEmpty) {
       children.add(const _SectionHeader('Your playlists'));
@@ -309,13 +329,13 @@ class _SectionHeader extends StatelessWidget {
 }
 
 SearchResult _toSearchResult(HistoryEntry e) => SearchResult(
-      id: e.videoId,
-      title: e.title,
-      uploader: e.uploader,
-      duration: e.duration,
-      thumbnail: e.thumbnail,
-      type: 'video',
-    );
+  id: e.itemId,
+  title: e.title,
+  uploader: e.uploader,
+  duration: e.duration,
+  thumbnail: e.thumbnail,
+  type: 'video',
+);
 
 class _ListOf extends StatelessWidget {
   const _ListOf({required this.entries, required this.onTap});
@@ -384,9 +404,9 @@ class _Empty extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
             ),
             if (actionLabel != null) ...[
               const SizedBox(height: 16),

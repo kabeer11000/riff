@@ -5,6 +5,8 @@ import (
 
 	"riff/m/internal/cache"
 	"riff/m/internal/config"
+	"riff/m/internal/index"
+	"riff/m/internal/provider"
 	"riff/m/internal/store"
 	"riff/m/internal/ytdl"
 )
@@ -14,12 +16,14 @@ type Server struct {
 	cfg       config.Config
 	repo      store.Repository
 	ytdl      *ytdl.Client
+	providers *provider.Registry
+	indexer   *index.Indexer
 	cache     *cache.URLCache  // resolved googlevideo stream URLs (short TTL)
 	jsonCache *cache.JSONCache // JSON response bodies (longer TTL)
 }
 
-func NewServer(cfg config.Config, repo store.Repository, y *ytdl.Client, c *cache.URLCache, jc *cache.JSONCache) *Server {
-	return &Server{cfg: cfg, repo: repo, ytdl: y, cache: c, jsonCache: jc}
+func NewServer(cfg config.Config, repo store.Repository, y *ytdl.Client, regs *provider.Registry, ix *index.Indexer, c *cache.URLCache, jc *cache.JSONCache) *Server {
+	return &Server{cfg: cfg, repo: repo, ytdl: y, providers: regs, indexer: ix, cache: c, jsonCache: jc}
 }
 
 // Handler builds the fully-wired http.Handler (routes + middleware chain).
@@ -29,8 +33,9 @@ func (s *Server) Handler() http.Handler {
 	// Public.
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /search", s.handleSearch)
-	mux.HandleFunc("GET /tracks/{id}", s.handleGetTrack)
-	mux.HandleFunc("GET /tracks/{id}/stream", s.handleStream)
+	mux.HandleFunc("GET /items/{id}", s.handleGetItem)
+	mux.HandleFunc("GET /items/{id}/stream", s.handleStreamItem)
+	mux.HandleFunc("GET /resolve", s.handleResolveURL)
 	mux.HandleFunc("GET /yt/playlists/{id}", s.handleYTPlaylist)
 	mux.HandleFunc("GET /yt/channels/{id}", s.handleYTChannel)
 	mux.HandleFunc("GET /users/{id}", s.handleGetUser)
@@ -48,20 +53,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /playlists/{id}", s.handleUpdatePlaylist)
 	mux.HandleFunc("DELETE /playlists/{id}", s.handleDeletePlaylist)
 	mux.HandleFunc("POST /playlists/{id}/tracks", s.handleAddTrack)
-	mux.HandleFunc("DELETE /playlists/{id}/tracks/{videoId}", s.handleRemoveTrack)
+	mux.HandleFunc("DELETE /playlists/{id}/tracks/{itemId}", s.handleRemoveTrack)
 	mux.HandleFunc("PUT /playlists/{id}/tracks/order", s.handleReorderTracks)
 	mux.HandleFunc("POST /playlists/{id}/share", s.handleShare)
 
 	mux.HandleFunc("GET /me/library/tracks", s.handleListLikes)
 	mux.HandleFunc("POST /me/library/tracks", s.handleLike)
-	mux.HandleFunc("DELETE /me/library/tracks/{videoId}", s.handleUnlike)
+	mux.HandleFunc("DELETE /me/library/tracks/{itemId}", s.handleUnlike)
 	mux.HandleFunc("POST /me/library/playlists/{id}", s.handleSavePlaylist)
 	mux.HandleFunc("DELETE /me/library/playlists/{id}", s.handleUnsavePlaylist)
 
 	// Listening history.
 	mux.HandleFunc("GET /me/history/tracks", s.handleListHistory)
 	mux.HandleFunc("POST /me/history/tracks", s.handleRecordPlay)
-	mux.HandleFunc("DELETE /me/history/tracks/{videoId}", s.handleDeleteHistoryTrack)
+	mux.HandleFunc("DELETE /me/history/tracks/{itemId}", s.handleDeleteHistoryTrack)
 	mux.HandleFunc("DELETE /me/history/tracks", s.handleClearHistory)
 
 	// Middleware chain (outermost first).

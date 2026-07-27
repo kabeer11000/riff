@@ -10,5 +10,6 @@ class AmbientLighting extends Notifier<bool> {
   void toggle() => state = !state;
 }
 
-final ambientLightingProvider =
-    NotifierProvider<AmbientLighting, bool>(AmbientLighting.new);
+final ambientLightingProvider = NotifierProvider<AmbientLighting, bool>(
+  AmbientLighting.new,
+);

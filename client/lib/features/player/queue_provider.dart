@@ -21,14 +21,13 @@ class QueueState {
   bool get hasPrevious => index > 0;
   bool get isEmpty => tracks.isEmpty;
 
-  QueueState copyWith({List<SearchResult>? tracks, int? index}) => QueueState(
-    tracks: tracks ?? this.tracks,
-    index: index ?? this.index,
-  );
+  QueueState copyWith({List<SearchResult>? tracks, int? index}) =>
+      QueueState(tracks: tracks ?? this.tracks, index: index ?? this.index);
 }
 
-final playbackQueueProvider =
-    NotifierProvider<PlaybackQueue, QueueState>(PlaybackQueue.new);
+final playbackQueueProvider = NotifierProvider<PlaybackQueue, QueueState>(
+  PlaybackQueue.new,
+);
 
 /// Owns track selection. [PlayerController] stays the audio loader: every
 /// cursor move here ends in a `player.play(...)` call. History context is

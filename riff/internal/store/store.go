@@ -12,14 +12,17 @@ var (
 	ErrForbidden = errors.New("forbidden")
 )
 
-// Repository is the persistence boundary for internal Riff data. The SQLite
-// implementation lives in sqlite.go; swapping to Postgres later means a new
-// implementation of this interface, not changes to handlers.
+// Repository is the persistence boundary for internal Riff data. The libSQL/Turso
+// implementation lives in turso.go; the SQLite-shaped test impl is in
+// sqlite_test.go.
 type Repository interface {
 	// Users / profiles.
 	EnsureUser(ctx context.Context, id string) error
 	GetProfile(ctx context.Context, id string) (domain.Profile, error)
 	UpdateProfile(ctx context.Context, id, displayName, avatarURL string) (domain.Profile, error)
+
+	// Items (provider-agnostic canonical record).
+	GetItem(ctx context.Context, id string) (domain.Item, error)
 
 	// Playlists.
 	CreatePlaylist(ctx context.Context, ownerID, name, description, visibility string) (domain.Playlist, error)
@@ -32,12 +35,12 @@ type Repository interface {
 
 	// Playlist tracks.
 	AddPlaylistTrack(ctx context.Context, playlistID, ownerID string, t domain.PlaylistTrack) error
-	RemovePlaylistTrack(ctx context.Context, playlistID, ownerID, videoID string) error
-	ReorderPlaylistTracks(ctx context.Context, playlistID, ownerID string, videoIDsInOrder []string) error
+	RemovePlaylistTrack(ctx context.Context, playlistID, ownerID, itemID string) error
+	ReorderPlaylistTracks(ctx context.Context, playlistID, ownerID string, itemIDsInOrder []string) error
 
 	// Library.
 	LikeTrack(ctx context.Context, userID string, t domain.LikedTrack) error
-	UnlikeTrack(ctx context.Context, userID, videoID string) error
+	UnlikeTrack(ctx context.Context, userID, itemID string) error
 	ListLikedTracks(ctx context.Context, userID string) ([]domain.LikedTrack, error)
 	SavePlaylist(ctx context.Context, userID, playlistID string) error
 	UnsavePlaylist(ctx context.Context, userID, playlistID string) error
@@ -47,8 +50,14 @@ type Repository interface {
 	RecordPlay(ctx context.Context, userID string, p domain.PlayEvent) error
 	ListHistory(ctx context.Context, userID string, limit int) ([]domain.HistoryEntry, error)
 	LatestContinueCard(ctx context.Context, userID string) (domain.ContinueCard, error)
-	DeleteHistoryTrack(ctx context.Context, userID, videoID string) error
+	DeleteHistoryTrack(ctx context.Context, userID, itemID string) error
 	ClearHistory(ctx context.Context, userID string) error
+
+	// Indexer hooks (provider-aware indexing of canonical items).
+	LookupBySource(ctx context.Context, provider, externalID string) (itemID string, found bool, err error)
+	LookupByCanonical(ctx context.Context, isrc, mbid string) (itemID string, found bool, err error)
+	CreateItem(ctx context.Context, item domain.Item) (itemID string, err error)
+	AddSource(ctx context.Context, itemID string, src domain.Source) error
 
 	Close() error
 }

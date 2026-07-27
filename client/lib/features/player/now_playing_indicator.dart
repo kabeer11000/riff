@@ -22,7 +22,8 @@ class NowPlayingIndicator extends ConsumerStatefulWidget {
   final Color? color;
 
   @override
-  ConsumerState<NowPlayingIndicator> createState() => _NowPlayingIndicatorState();
+  ConsumerState<NowPlayingIndicator> createState() =>
+      _NowPlayingIndicatorState();
 }
 
 class _NowPlayingIndicatorState extends ConsumerState<NowPlayingIndicator>
@@ -70,9 +71,27 @@ class _NowPlayingIndicatorState extends ConsumerState<NowPlayingIndicator>
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          _Bar(controller: _ctrl, phase: 0.0, color: effective, width: w, isPlaying: isPlaying),
-          _Bar(controller: _ctrl, phase: 0.33, color: effective, width: w, isPlaying: isPlaying),
-          _Bar(controller: _ctrl, phase: 0.66, color: effective, width: w, isPlaying: isPlaying),
+          _Bar(
+            controller: _ctrl,
+            phase: 0.0,
+            color: effective,
+            width: w,
+            isPlaying: isPlaying,
+          ),
+          _Bar(
+            controller: _ctrl,
+            phase: 0.33,
+            color: effective,
+            width: w,
+            isPlaying: isPlaying,
+          ),
+          _Bar(
+            controller: _ctrl,
+            phase: 0.66,
+            color: effective,
+            width: w,
+            isPlaying: isPlaying,
+          ),
         ],
       ),
     );
@@ -101,14 +120,13 @@ class _Bar extends StatelessWidget {
       builder: (_, _) {
         // Cosine-driven height: smooth oscillation between 30% and 100%.
         // When paused, snap to a static low/medium/high glyph.
-        final t = isPlaying
-            ? (controller.value + phase) % 1.0
-            : phase;
+        final t = isPlaying ? (controller.value + phase) % 1.0 : phase;
         final normalized = 0.5 - 0.5 * math.cos(t * 2 * math.pi);
         final h = (0.3 + 0.7 * normalized);
         return Container(
           width: width,
-          height: h * 18, // bar pixel height; the parent SizedBox bounds the row
+          height:
+              h * 18, // bar pixel height; the parent SizedBox bounds the row
           decoration: BoxDecoration(
             color: color,
             borderRadius: BorderRadius.circular(width / 2),

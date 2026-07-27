@@ -8,24 +8,28 @@ import (
 
 // Config holds runtime configuration, all sourced from environment variables.
 type Config struct {
-	Port            string        // HTTP listen port
-	DBPath          string        // SQLite file path
-	YTDLPPath       string        // path to yt-dlp/youtube-dl binary; empty = look up on PATH
-	CacheMaxTTL     time.Duration // ceiling for cached resolved stream URLs (googlevideo)
+	Port             string        // HTTP listen port
+	TursoURL         string        // libSQL database URL (e.g. libsql://riff-xxx.turso.io)
+	TursoToken       string        // libSQL auth token
+	YTDLPPath        string        // path to yt-dlp/youtube-dl binary; empty = look up on PATH
+	CacheMaxTTL      time.Duration // ceiling for cached resolved stream URLs (googlevideo)
 	CacheMetadataTTL time.Duration // metadata responses (tracks, channels, external playlists) — stable
 	CacheSearchTTL   time.Duration // search results — churn more
-	PublicBaseURL   string        // base URL used when building shareable links
+	PublicBaseURL    string        // base URL used when building shareable links
+	RedisURL         string        // optional; not used yet, will host recd:embeddings queue later
 }
 
 func Load() Config {
 	return Config{
 		Port:             env("PORT", "8080"),
-		DBPath:           env("DB_PATH", "riff.db"),
+		TursoURL:         env("TURSO_DATABASE_URL", ""),
+		TursoToken:       env("TURSO_AUTH_TOKEN", ""),
 		YTDLPPath:        env("YTDLP_PATH", ""),
 		CacheMaxTTL:      envDuration("CACHE_MAX_TTL", 5*time.Minute),
 		CacheMetadataTTL: envDuration("CACHE_METADATA_TTL", time.Hour),
 		CacheSearchTTL:   envDuration("CACHE_SEARCH_TTL", 5*time.Minute),
 		PublicBaseURL:    env("PUBLIC_BASE_URL", "http://localhost:8080"),
+		RedisURL:         env("REDIS_URL", ""),
 	}
 }
 

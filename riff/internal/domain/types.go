@@ -3,6 +3,7 @@ package domain
 import "time"
 
 // SearchResult is one hit from a search or a flat external playlist/channel listing.
+// `id` is a riff item_id (ULID) — never a raw provider ID.
 type SearchResult struct {
 	ID        string  `json:"id"`
 	Title     string  `json:"title"`
@@ -12,8 +13,32 @@ type SearchResult struct {
 	Type      string  `json:"type"` // "video" | "playlist" | "channel"
 }
 
-// FormatInfo is a client-facing description of a playable format. It deliberately
-// omits the direct googlevideo URL — clients stream through the proxy instead.
+// Source is a provider-specific record pointing at an item. Metadata is a
+// free-form per-provider blob (YouTube description + counts, Spotify credits,
+// MusicBrainz tags, …). The client renders what's present via a per-provider
+// schema with a generic key/value fallback.
+type Source struct {
+	Provider   string         `json:"provider"`
+	ExternalID string         `json:"externalId"`
+	URL        string         `json:"url,omitempty"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
+}
+
+// Item is the canonical, provider-agnostic record for one playable item
+// (song, podcast episode, etc.). It carries its own ULID and the list of
+// provider-specific Sources we know about.
+type Item struct {
+	ID        string   `json:"id"`
+	Title     string   `json:"title"`
+	Artists   []string `json:"artists"`
+	Album     string   `json:"album"`
+	Duration  float64  `json:"duration"`
+	Thumbnail string   `json:"thumbnail"`
+	Sources   []Source `json:"sources"`
+}
+
+// FormatInfo is client-facing description of a playable format. Only used by
+// /items/{id}/stream internally; not part of the Item wire shape.
 type FormatInfo struct {
 	FormatID string  `json:"formatId"`
 	Ext      string  `json:"ext"`
@@ -23,22 +48,6 @@ type FormatInfo struct {
 	ABR      float64 `json:"abr"`
 	Height   float64 `json:"height"`
 	Filesize float64 `json:"filesize"`
-}
-
-// TrackInfo is resolved metadata for a single YouTube video.
-type TrackInfo struct {
-	ID          string       `json:"id"`
-	Title       string       `json:"title"`
-	Uploader    string       `json:"uploader"`
-	ChannelID   string       `json:"channelId"`
-	Duration    float64      `json:"duration"`
-	Thumbnail   string       `json:"thumbnail"`
-	Description string       `json:"description"`
-	Artist      string       `json:"artist"`
-	Album       string       `json:"album"`
-	UploadDate  string       `json:"uploadDate"`
-	ViewCount   float64      `json:"viewCount"`
-	Formats     []FormatInfo `json:"formats"`
 }
 
 // ExternalPlaylist / ExternalChannel are flat listings resolved live from YouTube.
@@ -70,9 +79,9 @@ const (
 )
 
 // PlaylistTrack is a track inside an internal playlist. Minimal metadata is
-// denormalized so listing a playlist does not require re-resolving via yt-dlp.
+// denormalized so listing a playlist does not require re-resolving.
 type PlaylistTrack struct {
-	VideoID   string    `json:"videoId"`
+	ItemID    string    `json:"itemId"`
 	Position  int       `json:"position"`
 	Title     string    `json:"title"`
 	Uploader  string    `json:"uploader"`
@@ -97,7 +106,7 @@ type Playlist struct {
 
 // LikedTrack is a track in a user's "liked songs" library.
 type LikedTrack struct {
-	VideoID   string    `json:"videoId"`
+	ItemID    string    `json:"itemId"`
 	Title     string    `json:"title"`
 	Uploader  string    `json:"uploader"`
 	Duration  float64   `json:"duration"`
@@ -113,7 +122,7 @@ const LongFormThreshold = 600.0
 // PlayEvent is a single play record inserted into listening_history. Every
 // play is its own row — server-side grouping happens on read.
 type PlayEvent struct {
-	VideoID      string
+	ItemID       string
 	Title        string
 	Uploader     string
 	Duration     float64
@@ -126,7 +135,7 @@ type PlayEvent struct {
 
 // HistoryEntry is one deduped history item returned by ListHistory.
 type HistoryEntry struct {
-	VideoID      string    `json:"videoId"`
+	ItemID       string    `json:"itemId"`
 	Title        string    `json:"title"`
 	Uploader     string    `json:"uploader"`
 	Duration     float64   `json:"duration"`

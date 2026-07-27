@@ -18,9 +18,7 @@ class MiniPlayer extends ConsumerWidget {
     final state = ref.watch(playerControllerProvider);
     final track = state.track;
     if (track == null) return const SizedBox.shrink();
-    final hasNext = ref.watch(
-      playbackQueueProvider.select((q) => q.hasNext),
-    );
+    final hasNext = ref.watch(playbackQueueProvider.select((q) => q.hasNext));
     final hasPrevious = ref.watch(
       playbackQueueProvider.select((q) => q.hasPrevious),
     );
@@ -41,9 +39,7 @@ class MiniPlayer extends ConsumerWidget {
                   child: AspectRatio(
                     aspectRatio: 4 / 3,
                     child: Image.network(
-                      track.thumbnail.isEmpty
-                          ? 'https://i.ytimg.com/vi/${track.id}/hqdefault.jpg'
-                          : track.thumbnail,
+                      track.thumbnail,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => Container(
                         color: theme.colorScheme.surfaceContainerHighest,
@@ -89,9 +85,7 @@ class MiniPlayer extends ConsumerWidget {
                 tooltip: 'Previous',
                 iconSize: 22,
                 onPressed: hasPrevious
-                    ? () => ref
-                        .read(playbackQueueProvider.notifier)
-                        .previous()
+                    ? () => ref.read(playbackQueueProvider.notifier).previous()
                     : null,
                 icon: const Icon(Icons.skip_previous),
               ),

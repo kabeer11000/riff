@@ -4,7 +4,11 @@ import '../../../api/models/search_result.dart';
 import '../../player/track_context_menu.dart';
 
 class SearchResultTile extends StatelessWidget {
-  const SearchResultTile({super.key, required this.result, required this.onTap});
+  const SearchResultTile({
+    super.key,
+    required this.result,
+    required this.onTap,
+  });
   final SearchResult result;
   final VoidCallback onTap;
 
@@ -15,7 +19,7 @@ class SearchResultTile extends StatelessWidget {
       track: result,
       child: ListTile(
         onTap: onTap,
-        leading: _Thumb(url: result.thumbnail, videoId: result.id),
+        leading: _Thumb(url: result.thumbnail),
         title: Text(result.title, maxLines: 2, overflow: TextOverflow.ellipsis),
         subtitle: Text(
           '${result.uploader.isEmpty ? "Unknown" : result.uploader}'
@@ -37,14 +41,11 @@ class SearchResultTile extends StatelessWidget {
 }
 
 class _Thumb extends StatelessWidget {
-  const _Thumb({required this.url, required this.videoId});
+  const _Thumb({required this.url});
   final String url;
-  final String videoId;
 
   @override
   Widget build(BuildContext context) {
-    final fallback = 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
-    final src = url.isEmpty ? fallback : url;
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
       child: SizedBox(
@@ -52,7 +53,7 @@ class _Thumb extends StatelessWidget {
         child: AspectRatio(
           aspectRatio: 4 / 3,
           child: Image.network(
-            src,
+            url,
             fit: BoxFit.cover,
             errorBuilder: (_, _, _) => Container(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,

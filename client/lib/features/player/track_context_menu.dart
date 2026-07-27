@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../api/endpoints/history.dart';
 import '../../api/models/history_entry.dart';
+import '../../api/models/item.dart';
 import '../../api/models/search_result.dart';
+import '../../core/env.dart';
 import '../home/recent_list_controller.dart';
 import 'queue_provider.dart';
 
@@ -13,14 +15,16 @@ import 'queue_provider.dart';
 /// which only makes sense for HistoryTile (and triggers a home-data
 /// refresh). Other actions work from any source (search, history, queue).
 ///
-/// Trigger: wrap a track tile with a GestureDetector and call this from
-/// [GestureDetector.onLongPressStart] using `details.globalPosition`.
+/// [youtubeSource], when supplied, enables an extra "Open on YouTube" action
+/// that copies the original provider URL. Callers without it (e.g. search
+/// results shown via [SearchResult] only) get just the riff share link.
 Future<void> showTrackContextMenu({
   required BuildContext context,
   required WidgetRef ref,
   required SearchResult track,
   required Offset tapPosition,
   bool isHistoryItem = false,
+  Source? youtubeSource,
 }) async {
   final actions = <_MenuAction>[
     _MenuAction(
@@ -52,41 +56,47 @@ Future<void> showTrackContextMenu({
       icon: Icons.link,
       label: 'Copy link',
       onSelected: () async {
-        await Clipboard.setData(ClipboardData(
-          text: 'https://www.youtube.com/watch?v=${track.id}',
-        ));
+        await Clipboard.setData(ClipboardData(text: '$baseUrl/?v=${track.id}'));
         if (!context.mounted) return;
         _snack(context, 'Link copied');
       },
     ),
+    if (youtubeSource != null)
+      _MenuAction(
+        icon: Icons.open_in_new,
+        label: 'Open on YouTube',
+        onSelected: () async {
+          await Clipboard.setData(ClipboardData(text: youtubeSource.url));
+          if (!context.mounted) return;
+          _snack(context, 'YouTube link copied');
+        },
+      ),
   ];
 
   if (isHistoryItem) {
-    actions.add(_MenuAction(
-      icon: Icons.delete_outline,
-      label: 'Remove from history',
-      destructive: true,
-      onSelected: () async {
-        try {
-          await ref.read(historyApiProvider).deleteTrack(track.id);
-          // Refresh the home list so the entry disappears without a
-          // pull-to-refresh.
-          ref.invalidate(homeDataProvider);
-          if (!context.mounted) return;
-          _snack(context, 'Removed from history');
-        } catch (_) {
-          if (!context.mounted) return;
-          _snack(context, 'Could not remove from history');
-        }
-      },
-    ));
+    actions.add(
+      _MenuAction(
+        icon: Icons.delete_outline,
+        label: 'Remove from history',
+        destructive: true,
+        onSelected: () async {
+          try {
+            await ref.read(historyApiProvider).deleteTrack(track.id);
+            ref.invalidate(homeDataProvider);
+            if (!context.mounted) return;
+            _snack(context, 'Removed from history');
+          } catch (_) {
+            if (!context.mounted) return;
+            _snack(context, 'Could not remove from history');
+          }
+        },
+      ),
+    );
   }
 
   final overlayBox =
       Overlay.of(context).context.findRenderObject() as RenderBox?;
   if (overlayBox == null) return;
-  // Anchor the menu at the tap point. showMenu uses the available
-  // space — it flips to the other side if there's no room above/below.
   final position = RelativeRect.fromLTRB(
     tapPosition.dx,
     tapPosition.dy,
@@ -103,16 +113,20 @@ Future<void> showTrackContextMenu({
           onTap: a.onSelected,
           child: Row(
             children: [
-              Icon(a.icon,
-                  size: 20,
-                  color: a.destructive
-                      ? Theme.of(context).colorScheme.error
-                      : null),
+              Icon(
+                a.icon,
+                size: 20,
+                color: a.destructive
+                    ? Theme.of(context).colorScheme.error
+                    : null,
+              ),
               const SizedBox(width: 14),
-              Text(a.label,
-                  style: a.destructive
-                      ? TextStyle(color: Theme.of(context).colorScheme.error)
-                      : null),
+              Text(
+                a.label,
+                style: a.destructive
+                    ? TextStyle(color: Theme.of(context).colorScheme.error)
+                    : null,
+              ),
             ],
           ),
         ),
@@ -129,20 +143,23 @@ class TrackContextMenu extends ConsumerWidget {
     required this.track,
     required this.child,
     this.isHistoryItem = false,
+    this.youtubeSource,
   });
   final SearchResult track;
   final Widget child;
   final bool isHistoryItem;
+  final Source? youtubeSource;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     void show(Offset at) => showTrackContextMenu(
-          context: context,
-          ref: ref,
-          track: track,
-          tapPosition: at,
-          isHistoryItem: isHistoryItem,
-        );
+      context: context,
+      ref: ref,
+      track: track,
+      tapPosition: at,
+      isHistoryItem: isHistoryItem,
+      youtubeSource: youtubeSource,
+    );
     return GestureDetector(
       onLongPressStart: (d) => show(d.globalPosition),
       onSecondaryTapDown: (d) => show(d.globalPosition),
@@ -156,13 +173,13 @@ class TrackContextMenu extends ConsumerWidget {
 /// backend doesn't tag history entries with type, so we infer long-form
 /// vs short-form from the duration threshold used elsewhere (10 min).
 SearchResult searchResultFromHistory(HistoryEntry e) => SearchResult(
-      id: e.videoId,
-      title: e.title,
-      uploader: e.uploader,
-      duration: e.duration,
-      thumbnail: e.thumbnail,
-      type: e.duration >= 600 ? 'video' : 'audio',
-    );
+  id: e.itemId,
+  title: e.title,
+  uploader: e.uploader,
+  duration: e.duration,
+  thumbnail: e.thumbnail,
+  type: e.duration >= 600 ? 'video' : 'audio',
+);
 
 void _snack(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(

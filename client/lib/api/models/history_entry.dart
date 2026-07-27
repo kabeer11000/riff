@@ -1,6 +1,6 @@
 class HistoryEntry {
   HistoryEntry({
-    required this.videoId,
+    required this.itemId,
     required this.title,
     required this.uploader,
     required this.duration,
@@ -15,21 +15,21 @@ class HistoryEntry {
   });
 
   factory HistoryEntry.fromJson(Map<String, dynamic> j) => HistoryEntry(
-        videoId: j['videoId'] as String,
-        title: j['title'] as String? ?? '',
-        uploader: j['uploader'] as String? ?? '',
-        duration: (j['duration'] as num?)?.toDouble() ?? 0,
-        thumbnail: j['thumbnail'] as String? ?? '',
-        lastPlayedAt: DateTime.parse(j['lastPlayedAt'] as String),
-        playCount: (j['playCount'] as num?)?.toInt() ?? 0,
-        lastPosition: (j['lastPosition'] as num?)?.toDouble() ?? 0,
-        isLongForm: j['isLongForm'] as bool? ?? false,
-        contextKind: j['contextKind'] as String? ?? '',
-        contextId: j['contextId'] as String? ?? '',
-        contextTitle: j['contextTitle'] as String? ?? '',
-      );
+    itemId: j['itemId'] as String,
+    title: j['title'] as String? ?? '',
+    uploader: j['uploader'] as String? ?? '',
+    duration: (j['duration'] as num?)?.toDouble() ?? 0,
+    thumbnail: j['thumbnail'] as String? ?? '',
+    lastPlayedAt: DateTime.parse(j['lastPlayedAt'] as String),
+    playCount: (j['playCount'] as num?)?.toInt() ?? 0,
+    lastPosition: (j['lastPosition'] as num?)?.toDouble() ?? 0,
+    isLongForm: j['isLongForm'] as bool? ?? false,
+    contextKind: j['contextKind'] as String? ?? '',
+    contextId: j['contextId'] as String? ?? '',
+    contextTitle: j['contextTitle'] as String? ?? '',
+  );
 
-  final String videoId;
+  final String itemId;
   final String title;
   final String uploader;
   final double duration;

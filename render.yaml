@@ -1,0 +1,25 @@
+# Render Blueprint. Connect this repo as a Blueprint and the service is created
+# in one action. Edit envVars before applying.
+services:
+  - type: web
+    name: riff-api
+    runtime: docker
+    rootDir: riff
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: PUBLIC_BASE_URL
+        value: https://riff-api.onrender.com
+      - key: YTDLP_PATH
+        value: /usr/local/bin/yt-dlp
+      - key: REDIS_URL
+        sync: false

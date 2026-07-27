@@ -8,8 +8,8 @@ import 'api_exception.dart';
 
 class ApiClient {
   ApiClient({http.Client? client, String? baseUrl})
-      : _client = client ?? http.Client(),
-        _baseUrl = baseUrl ?? _defaultBaseUrl;
+    : _client = client ?? http.Client(),
+      _baseUrl = baseUrl ?? _defaultBaseUrl;
 
   final http.Client _client;
   final String _baseUrl;
@@ -17,18 +17,20 @@ class ApiClient {
   String get baseUrl => _baseUrl;
 
   Map<String, String> get _jsonHeaders => {
-        'X-User-Id': devUserId,
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      };
+    'X-User-Id': devUserId,
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+  };
 
   Map<String, String> get _headers => {
-        'X-User-Id': devUserId,
-        'Accept': 'application/json',
-      };
+    'X-User-Id': devUserId,
+    'Accept': 'application/json',
+  };
 
-  Future<Map<String, dynamic>> getJson(String path,
-      [Map<String, String>? query]) async {
+  Future<Map<String, dynamic>> getJson(
+    String path, [
+    Map<String, String>? query,
+  ]) async {
     final uri = Uri.parse('$_baseUrl$path').replace(queryParameters: query);
     final res = await _client
         .get(uri, headers: _headers)

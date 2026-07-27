@@ -10,7 +10,7 @@ import '../features/player/player_sheet_controller.dart';
 import '../features/player/video_fullscreen_provider.dart';
 import '../features/player/video_tab_provider.dart';
 import '../features/player/youtube_embed.dart';
-import '../api/models/search_result.dart';
+import '../api/models/item.dart';
 import '../core/url_state.dart';
 import 'theme.dart';
 
@@ -57,7 +57,7 @@ class _HomeShellState extends ConsumerState<_HomeShell> {
     super.initState();
     // Restore ?v=<id> on cold load, paused. Skipped on tracks we already have
     // (e.g. after a hot reload) so we don't kick off a duplicate play.
-    final id = readUrlState().videoId;
+    final id = readUrlState().itemId;
     if (id != null && ref.read(playerControllerProvider).track?.id != id) {
       // Defer to post-frame so PlayerController.build() can finish wiring
       // its streams before playById() reads them.
@@ -89,10 +89,11 @@ class _HomeShellState extends ConsumerState<_HomeShell> {
       playerControllerProvider.select((s) => s.track != null),
     );
     // Theater mode only bites while the video tab is active on a wide layout.
-    final theater = ref.watch(theaterModeProvider) &&
-        ref.watch(videoTabEnabledProvider);
+    final theater =
+        ref.watch(theaterModeProvider) && ref.watch(videoTabEnabledProvider);
     final fullscreen = ref.watch(fullscreenVideoProvider);
     final track = ref.watch(playerControllerProvider.select((s) => s.track));
+    final item = ref.watch(playerControllerProvider.select((s) => s.item));
 
     return Scaffold(
       backgroundColor: AppPalette.blackPure,
@@ -101,8 +102,7 @@ class _HomeShellState extends ConsumerState<_HomeShell> {
           LayoutBuilder(
             builder: (context, constraints) {
               final width = constraints.maxWidth;
-              final playerWidth =
-                  theater ? width * 0.72 : _playerSidebarWidth;
+              final playerWidth = theater ? width * 0.72 : _playerSidebarWidth;
               if (width >= _desktopBreakpoint) {
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -182,22 +182,18 @@ class _HomeShellState extends ConsumerState<_HomeShell> {
               return Stack(
                 children: const [
                   Positioned.fill(child: HomeScreen()),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: MiniPlayer(),
-                  ),
+                  Positioned(left: 0, right: 0, bottom: 0, child: MiniPlayer()),
                 ],
               );
             },
           ),
           // Full-window overlay rendered above the layout when fullscreen is
-          // active. Only mounts the iframe when there's something to play; the
-          // inline embeds in BigPlayer/BigPlayerSidebar are responsible for
-          // hiding themselves when this is true (so we never have two iframes).
-          if (fullscreen && track != null)
-            Positioned.fill(child: _FullscreenVideoOverlay(track: track)),
+          // active. Only mounts the iframe when there's something to play AND
+          // it has a YouTube source; the inline embeds in BigPlayer/
+          // BigPlayerSidebar are responsible for hiding themselves when this
+          // is true (so we never have two iframes).
+          if (fullscreen && track != null && item != null && item.hasYoutube)
+            Positioned.fill(child: _FullscreenVideoOverlay(item: item)),
         ],
       ),
     );
@@ -235,19 +231,14 @@ class _Panel extends StatelessWidget {
 /// Full-window route-style surface for the YouTube embed. Uses a black
 /// backdrop so the iframe fills the whole viewport regardless of theme.
 class _FullscreenVideoOverlay extends StatelessWidget {
-  const _FullscreenVideoOverlay({required this.track});
-  final SearchResult track;
+  const _FullscreenVideoOverlay({required this.item});
+  final Item item;
 
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
       color: Colors.black,
-      child: SafeArea(
-        child: YouTubeEmbed(
-          videoId: track.id,
-          fullscreen: true,
-        ),
-      ),
+      child: SafeArea(child: YouTubeEmbed(item: item, fullscreen: true)),
     );
   }
 }

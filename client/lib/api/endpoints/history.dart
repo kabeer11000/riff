@@ -9,10 +9,11 @@ class HistoryApi {
   HistoryApi(this._client);
   final ApiClient _client;
 
-  /// Returns the home data payload. Server groups plays per video and pairs
+  /// Returns the home data payload. Server groups plays per item and pairs
   /// the list with the latest playlist/channel continue card in one round-trip.
-  Future<({List<HistoryEntry> entries, ContinueCard? continueCard})> list(
-      {int limit = 20}) async {
+  Future<({List<HistoryEntry> entries, ContinueCard? continueCard})> list({
+    int limit = 20,
+  }) async {
     final j = await _client.getJson('/me/history/tracks', {'limit': '$limit'});
     final entries = ((j['entries'] as List?) ?? const [])
         .map((e) => HistoryEntry.fromJson(e as Map<String, dynamic>))
@@ -27,7 +28,7 @@ class HistoryApi {
   /// Fire-and-forget POST. Best-effort: callers don't await and don't surface
   /// failures to the user — losing a position tick is acceptable.
   Future<void> record({
-    required String videoId,
+    required String itemId,
     required String title,
     String uploader = '',
     double duration = 0,
@@ -38,7 +39,7 @@ class HistoryApi {
     String contextTitle = '',
   }) {
     final body = <String, dynamic>{
-      'videoId': videoId,
+      'itemId': itemId,
       'title': title,
       if (uploader.isNotEmpty) 'uploader': uploader,
       if (duration > 0) 'duration': duration,
@@ -51,11 +52,12 @@ class HistoryApi {
     return _client.postJson('/me/history/tracks', body);
   }
 
-  Future<void> deleteTrack(String videoId) =>
-      _client.delete('/me/history/tracks/$videoId');
+  Future<void> deleteTrack(String itemId) =>
+      _client.delete('/me/history/tracks/$itemId');
 
   Future<void> clear() => _client.delete('/me/history/tracks');
 }
 
-final historyApiProvider =
-    Provider<HistoryApi>((ref) => HistoryApi(ref.watch(apiClientProvider)));
+final historyApiProvider = Provider<HistoryApi>(
+  (ref) => HistoryApi(ref.watch(apiClientProvider)),
+);

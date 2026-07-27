@@ -49,9 +49,7 @@ class CoverArt extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(_coverRadius),
                       child: SizedBox.expand(
                         child: Image.network(
-                          track.thumbnail.isEmpty
-                              ? 'https://i.ytimg.com/vi/${track.id}/hqdefault.jpg'
-                              : track.thumbnail,
+                          track.thumbnail,
                           fit: BoxFit.cover,
                           errorBuilder: (_, _, _) => Container(
                             color: theme.colorScheme.surfaceContainerHighest,
@@ -94,8 +92,9 @@ class CoverArt extends ConsumerWidget {
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
-                                      color:
-                                          Colors.black.withValues(alpha: 0.3),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.3,
+                                      ),
                                       blurRadius: 8,
                                       offset: const Offset(0, 2),
                                     ),
@@ -452,8 +451,8 @@ class _HorizontalScrubberState extends ConsumerState<HorizontalScrubber> {
                     onPressed: state.isLoading || !hasPrevious
                         ? null
                         : () => ref
-                            .read(playbackQueueProvider.notifier)
-                            .previous(),
+                              .read(playbackQueueProvider.notifier)
+                              .previous(),
                     icon: const Icon(Icons.skip_previous_rounded),
                   ),
                   IconButton(
@@ -476,9 +475,7 @@ class _HorizontalScrubberState extends ConsumerState<HorizontalScrubber> {
                     tooltip: 'Next',
                     onPressed: state.isLoading || !hasNext
                         ? null
-                        : () => ref
-                            .read(playbackQueueProvider.notifier)
-                            .next(),
+                        : () => ref.read(playbackQueueProvider.notifier).next(),
                     icon: const Icon(Icons.skip_next_rounded),
                   ),
                   Text(_fmtDuration(elapsed), style: timeStyle),

@@ -49,7 +49,26 @@
       "Bash(nohup ./riff-server)",
       "Bash(disown sleep *)",
       "Bash(YTDLP_PATH=\"$\\(pwd\\)/yt-dlp/yt-dlp.exe\" nohup ./riff-server)",
-      "Bash(YTDLP_PATH=\"$\\(pwd\\)/yt-dlp/yt-dlp.exe\" ./yt-dlp/yt-dlp.exe --skip-download -j -- \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\")"
+      "Bash(YTDLP_PATH=\"$\\(pwd\\)/yt-dlp/yt-dlp.exe\" ./yt-dlp/yt-dlp.exe --skip-download -j -- \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\")",
+      "Bash(go get *)",
+      "Bash(export TURSO_DATABASE_URL='libsql://riff-kabeer11000.aws-ap-south-1.turso.io' export TURSO_AUTH_TOKEN='eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODUxNjk1MTgsImlkIjoiMDE5ZmE0NjQtOWEwMS03MTczLTg4NDUtYWFjNjkxODA0ZWFmIiwia2lkIjoicHNtVGkzYVB2Q0VYdFF1VEJMT0U3ZHJBemxLMk9ZSHB2OGNHdE5HeWVXNCIsInJpZCI6IjQyZDRlYTBkLTM0NWUtNGVlOC1hZTkzLWI1NzFkOWE1Njc3OSJ9.HSDk4RQAq7qnDvH1mu-w1nTK3gD73JUf9bB-04AkgJSGTVO77K2Xwcff11H1pvtgkGGddCpdOQefjVka9of2AA' export YTDLP_PATH='./yt-dlp/yt-dlp.exe' ./riff-server 2)",
+      "Bash(echo \"started pid=$!\" sleep 3 cat server.log)",
+      "Bash(export TURSO_DATABASE_URL='libsql://riff-kabeer11000.aws-ap-south-1.turso.io' export TURSO_AUTH_TOKEN='eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODUxNjk1MTgsImlkIjoiMDE5ZmE0NjQtOWEwMS03MTczLTg4NDUtYWFjNjkxODA0ZWFmIiwia2lkIjoicHNtVGkzYVB2Q0VYdFF1VEJMT0U3ZHJBemxLMk9ZSHB2OGNHdE5HeWVXNCIsInJpZCI6IjQyZDRlYTBkLTM0NWUtNGVlOC1hZTkzLWI1NzFkOWE1Njc3OSJ9.HSDk4RQAq7qnDvH1mu-w1nTK3gD73JUf9bB-04AkgJSGTVO77K2Xwcff11H1pvtgkGGddCpdOQefjVka9of2AA' export YTDLP_PATH='./yt-dlp/yt-dlp.exe' nohup ./riff-server 2)",
+      "Bash(echo \"started pid=$!\" sleep 4 cat server.log)",
+      "Bash(echo \"started pid=$!\" sleep 3 tail -3 server.log)",
+      "Bash(export TURSO_DATABASE_URL='libsql://riff-kabeer11000.aws-ap-south-1.turso.io')",
+      "Bash(export TURSO_AUTH_TOKEN='eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODUxNjk1MTgsImlkIjoiMDE5ZmE0NjQtOWEwMS03MTczLTg4NDUtYWFjNjkxODA0ZWFmIiwia2lkIjoicHNtVGkzYVB2Q0VYdFF1VEJMT0U3ZHJBemxLMk9ZSHB2OGNHdE5HeWVXNCIsInJpZCI6IjQyZDRlYTBkLTM0NWUtNGVlOC1hZTkzLWI1NzFkOWE1Njc3OSJ9.HSDk4RQAq7qnDvH1mu-w1nTK3gD73JUf9bB-04AkgJSGTVO77K2Xwcff11H1pvtgkGGddCpdOQefjVka9of2AA')",
+      "Bash(export YTDLP_PATH='E:/Software/riff/riff/yt-dlp/yt-dlp.exe')",
+      "Bash(echo \"started pid=$!\")",
+      "Bash(xxd)",
+      "Bash(./stop.sh)",
+      "Bash(./run-detached.sh)",
+      "Bash(echo \"stream kicked off in background, pid=$!\")",
+      "Bash(pkill -f \"curl.*stream\")",
+      "Bash(dart format *)",
+      "Read(//e/e/Software/**)",
+      "Read(//e/e/Software/riff/riff/**)",
+      "Bash(render --version)"
     ]
   }
 }

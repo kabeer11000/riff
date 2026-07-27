@@ -7,14 +7,16 @@ import (
 	"time"
 
 	"github.com/wader/goutubedl"
-
-	"riff/m/internal/domain"
 )
 
-// Client wraps goutubedl (which shells out to yt-dlp/youtube-dl).
+// Client wraps goutubedl (which shells out to yt-dlp/youtube-dl). It exposes
+// only the two operations the rest of riff needs from yt-dlp:
+//   1. Search: flat listing of hits.
+//   2. Stream resolution: best directly-proxyable format URL for a video id.
+// Higher-level metadata (artist, album, thumbnail) is read from the raw Info
+// struct by the provider layer.
 type Client struct{}
 
-// New configures the yt-dlp binary path (empty = look up on PATH) and returns a Client.
 func New(binPath string) *Client {
 	if binPath != "" {
 		goutubedl.Path = binPath
@@ -24,11 +26,25 @@ func New(binPath string) *Client {
 
 const watchURLFmt = "https://www.youtube.com/watch?v=%s"
 
-// Search returns flat results for a YouTube search query. yt-dlp's search is
-// video-oriented (ytsearch); the typ parameter is accepted for forward
-// compatibility but currently only video results are returned.
-func (c *Client) Search(ctx context.Context, query string, limit int, typ string) ([]domain.SearchResult, error) {
-	_ = typ
+// Info is the subset of yt-dlp metadata riff cares about. Returned by Search
+// and ResolveInfo; higher layers map this into provider.Result.
+type Info struct {
+	ID          string
+	Title       string
+	Uploader    string
+	Channel     string
+	ChannelID   string
+	Duration    float64
+	Thumbnail   string
+	Artist      string
+	Album       string
+	UploadDate  string
+	ViewCount   int64
+	Description string
+}
+
+// Search returns flat results for a YouTube search query.
+func (c *Client) Search(ctx context.Context, query string, limit int) ([]Info, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -40,51 +56,47 @@ func (c *Client) Search(ctx context.Context, query string, limit int, typ string
 	if err != nil {
 		return nil, err
 	}
-	return entriesToResults(res.Info.Entries), nil
+	out := make([]Info, 0, len(res.Info.Entries))
+	for _, e := range res.Info.Entries {
+		if e.ID == "" {
+			continue
+		}
+		out = append(out, Info{
+			ID:        e.ID,
+			Title:     e.Title,
+			Uploader:  e.Uploader,
+			Channel:   e.Channel,
+			ChannelID: e.ChannelID,
+			Duration:  e.Duration,
+			Thumbnail: firstNonEmpty(e.Thumbnail, ytThumbnail(e.ID)),
+		})
+	}
+	return out, nil
 }
 
-// Resolve returns metadata + playable formats for a single video.
-func (c *Client) Resolve(ctx context.Context, videoID string) (domain.TrackInfo, error) {
+// ResolveInfo returns metadata for a single YouTube video.
+func (c *Client) ResolveInfo(ctx context.Context, videoID string) (Info, error) {
 	res, err := goutubedl.New(ctx, fmt.Sprintf(watchURLFmt, videoID), goutubedl.Options{
 		Type: goutubedl.TypeSingle,
 	})
 	if err != nil {
-		return domain.TrackInfo{}, err
-	}
-	formats, err := parseFormats(res.RawJSON)
-	if err != nil {
-		return domain.TrackInfo{}, err
+		return Info{}, err
 	}
 	info := res.Info
-	ti := domain.TrackInfo{
+	return Info{
 		ID:          info.ID,
 		Title:       info.Title,
-		Uploader:    firstNonEmpty(info.Uploader, info.Channel),
+		Uploader:    info.Uploader,
+		Channel:     info.Channel,
 		ChannelID:   info.ChannelID,
 		Duration:    info.Duration,
 		Thumbnail:   info.Thumbnail,
-		Description: info.Description,
 		Artist:      info.Artist,
 		Album:       info.Album,
 		UploadDate:  info.UploadDate,
-		ViewCount:   info.ViewCount,
-	}
-	for _, f := range formats {
-		if f.Kind == "" {
-			continue
-		}
-		ti.Formats = append(ti.Formats, domain.FormatInfo{
-			FormatID: f.FormatID,
-			Ext:      f.Ext,
-			Kind:     f.Kind,
-			ACodec:   f.ACodec,
-			VCodec:   f.VCodec,
-			ABR:      f.ABR,
-			Height:   f.Height,
-			Filesize: f.Filesize,
-		})
-	}
-	return ti, nil
+		ViewCount:   int64(info.ViewCount),
+		Description: info.Description,
+	}, nil
 }
 
 // ResolvedStream is a single directly-fetchable format URL.
@@ -92,11 +104,11 @@ type ResolvedStream struct {
 	URL         string
 	ContentType string
 	Kind        string
-	ExpiresAt   time.Time // from the googlevideo `expire` param; zero if unknown
+	ExpiresAt   time.Time
 }
 
-// ResolveStream resolves a video and picks the best directly-proxyable format of
-// the requested kind ("audio" or "muxed").
+// ResolveStream resolves a video and picks the best directly-proxyable
+// format of the requested kind ("audio" or "muxed").
 func (c *Client) ResolveStream(ctx context.Context, videoID, kind string) (ResolvedStream, error) {
 	res, err := goutubedl.New(ctx, fmt.Sprintf(watchURLFmt, videoID), goutubedl.Options{
 		Type: goutubedl.TypeSingle,
@@ -119,75 +131,65 @@ func (c *Client) ResolveStream(ctx context.Context, videoID, kind string) (Resol
 	return rs, nil
 }
 
-// Playlist resolves an external YouTube playlist (flat).
-func (c *Client) Playlist(ctx context.Context, playlistID string) (domain.ExternalPlaylist, error) {
+// Playlist returns the flat listing of an external YouTube playlist.
+func (c *Client) Playlist(ctx context.Context, playlistID string) (string, []Info, error) {
 	res, err := goutubedl.New(ctx, "https://www.youtube.com/playlist?list="+playlistID, goutubedl.Options{
 		Type:         goutubedl.TypePlaylist,
 		FlatPlaylist: true,
 	})
 	if err != nil {
-		return domain.ExternalPlaylist{}, err
+		return "", nil, err
 	}
-	return domain.ExternalPlaylist{
-		ID:      firstNonEmpty(res.Info.ID, playlistID),
-		Title:   res.Info.Title,
-		Entries: entriesToResults(res.Info.Entries),
-	}, nil
-}
-
-// Channel resolves an external YouTube channel (flat).
-func (c *Client) Channel(ctx context.Context, channelID string) (domain.ExternalChannel, error) {
-	res, err := goutubedl.New(ctx, "https://www.youtube.com/channel/"+channelID, goutubedl.Options{
-		Type:         goutubedl.TypeChannel,
-		FlatPlaylist: true,
-	})
-	if err != nil {
-		return domain.ExternalChannel{}, err
+	title := firstNonEmpty(res.Info.ID, playlistID)
+	if res.Info.Title != "" {
+		title = res.Info.Title
 	}
-	return domain.ExternalChannel{
-		ID:      firstNonEmpty(res.Info.ID, channelID),
-		Title:   res.Info.Title,
-		Entries: entriesToResults(res.Info.Entries),
-	}, nil
-}
-
-func entriesToResults(entries []goutubedl.Info) []domain.SearchResult {
-	out := make([]domain.SearchResult, 0, len(entries))
-	for _, e := range entries {
+	out := make([]Info, 0, len(res.Info.Entries))
+	for _, e := range res.Info.Entries {
 		if e.ID == "" {
 			continue
 		}
-		out = append(out, domain.SearchResult{
+		out = append(out, Info{
 			ID:        e.ID,
 			Title:     e.Title,
 			Uploader:  firstNonEmpty(e.Uploader, e.Channel),
 			Duration:  e.Duration,
 			Thumbnail: firstNonEmpty(e.Thumbnail, ytThumbnail(e.ID)),
-			Type:      entryType(e.Type),
 		})
 	}
-	return out
+	return title, out, nil
 }
 
-// ytThumbnail returns a deterministic YouTube thumbnail URL for a video ID.
-// Used as a fallback when yt-dlp's flat listing does not include thumbnails,
-// so search/playlist/channel listings don't all show empty strings.
-func ytThumbnail(videoID string) string {
-	return "https://i.ytimg.com/vi/" + videoID + "/hqdefault.jpg"
+// Channel returns the flat listing of an external YouTube channel.
+func (c *Client) Channel(ctx context.Context, channelID string) (string, []Info, error) {
+	res, err := goutubedl.New(ctx, "https://www.youtube.com/channel/"+channelID, goutubedl.Options{
+		Type:         goutubedl.TypeChannel,
+		FlatPlaylist: true,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	out := make([]Info, 0, len(res.Info.Entries))
+	for _, e := range res.Info.Entries {
+		if e.ID == "" {
+			continue
+		}
+		out = append(out, Info{
+			ID:        e.ID,
+			Title:     e.Title,
+			Uploader:  firstNonEmpty(e.Uploader, e.Channel),
+			Duration:  e.Duration,
+			Thumbnail: firstNonEmpty(e.Thumbnail, ytThumbnail(e.ID)),
+		})
+	}
+	return res.Info.Title, out, nil
 }
 
-// Thumbnail returns the canonical YouTube thumbnail URL for a video ID.
+// Thumbnail returns the canonical YouTube thumbnail URL for a video id.
 func (c *Client) Thumbnail(videoID string) string { return ytThumbnail(videoID) }
 
-func entryType(t string) string {
-	switch t {
-	case "playlist", "multi_video":
-		return "playlist"
-	case "channel":
-		return "channel"
-	default:
-		return "video"
-	}
+func ytThumbnail(videoID string) string {
+	return "https://i.ytimg.com/vi/" + videoID + "/hqdefault.jpg"
 }
 
 func firstNonEmpty(vals ...string) string {
@@ -200,9 +202,7 @@ func firstNonEmpty(vals ...string) string {
 }
 
 // parseExpire extracts the unix `expire` query param from a googlevideo URL.
-// Returns 0 if absent/unparseable.
 func parseExpire(rawURL string) int64 {
-	// Cheap scan avoids a full url.Parse on every stream request.
 	const marker = "expire="
 	i := indexOf(rawURL, marker)
 	if i < 0 {

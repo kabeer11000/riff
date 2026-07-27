@@ -46,7 +46,8 @@ String _humanPosition(double secs) {
 /// flat distribution across uploaders. Pure function over [entries]; lives in
 /// the controller file so any future home surface can reuse it.
 ({String uploader, List<HistoryEntry> tracks})? topChannel(
-    List<HistoryEntry> entries) {
+  List<HistoryEntry> entries,
+) {
   if (entries.length < 2) return null;
   final byUploader = <String, List<HistoryEntry>>{};
   for (final e in entries) {
@@ -70,10 +71,10 @@ String _humanPosition(double secs) {
     }
   });
   if (best.isEmpty || bestPlays <= 1) return null;
-  final tracks = (byUploader[best]!
-        ..sort((a, b) => b.playCount.compareTo(a.playCount)))
-      .take(6)
-      .toList();
+  final tracks =
+      (byUploader[best]!..sort((a, b) => b.playCount.compareTo(a.playCount)))
+          .take(6)
+          .toList();
   return (uploader: best, tracks: tracks);
 }
 
@@ -96,10 +97,12 @@ class HistoryTile extends StatelessWidget {
             children: [
               _Thumb(entry: entry),
               const SizedBox(width: 16),
-              Expanded(child: _Text(entry: entry, style: _TextStyle.row)),
+              Expanded(
+                child: _Text(entry: entry, style: _TextStyle.row),
+              ),
               // Trailing equalizer when this is the playing track.
               const SizedBox(width: 8),
-              NowPlayingIndicator(trackId: entry.videoId, size: 16),
+              NowPlayingIndicator(trackId: entry.itemId, size: 16),
             ],
           ),
         ),
@@ -135,12 +138,14 @@ class HistoryGridCard extends StatelessWidget {
                   aspectRatio: 4 / 3,
                   child: _ThumbArt(
                     url: entry.thumbnail,
-                    videoId: entry.videoId,
+                    itemId: entry.itemId,
                     radius: 10,
                     progress: entry.isLongForm && entry.duration > 0
                         ? entry.lastPosition / entry.duration
                         : null,
-                    minutesLeft: entry.isLongForm ? _humanPosition(entry.lastPosition) : null,
+                    minutesLeft: entry.isLongForm
+                        ? _humanPosition(entry.lastPosition)
+                        : null,
                   ),
                 ),
               ),
@@ -211,7 +216,9 @@ class ContinueCardTile extends StatelessWidget {
           onTap: () {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('${card.kind[0].toUpperCase()}${card.kind.substring(1)} view coming soon'),
+                content: Text(
+                  '${card.kind[0].toUpperCase()}${card.kind.substring(1)} view coming soon',
+                ),
               ),
             );
           },
@@ -231,7 +238,9 @@ class ContinueCardTile extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
-                    card.kind == 'channel' ? Icons.person_outline : Icons.queue_music,
+                    card.kind == 'channel'
+                        ? Icons.person_outline
+                        : Icons.queue_music,
                     size: 28,
                     color: theme.colorScheme.onPrimaryContainer,
                   ),
@@ -288,7 +297,7 @@ class _Thumb extends StatelessWidget {
         aspectRatio: 4 / 3,
         child: _ThumbArt(
           url: entry.thumbnail,
-          videoId: entry.videoId,
+          itemId: entry.itemId,
           radius: 6,
           progress: progress,
         ),
@@ -299,34 +308,31 @@ class _Thumb extends StatelessWidget {
 
 class _ThumbArt extends StatelessWidget {
   const _ThumbArt({
+    required this.itemId,
     required this.url,
-    required this.videoId,
     required this.radius,
     this.progress,
     this.minutesLeft,
   });
+  final String itemId;
   final String url;
-  final String videoId;
   final double radius;
   final double? progress;
   final String? minutesLeft;
 
   @override
   Widget build(BuildContext context) {
-    final src = url.isEmpty ? 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg' : url;
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: Stack(
         fit: StackFit.expand,
         children: [
           Image.network(
-            src,
+            url,
             fit: BoxFit.cover,
             errorBuilder: (_, _, _) => Container(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: const Center(
-                child: Icon(Icons.music_note, size: 28),
-              ),
+              child: const Center(child: Icon(Icons.music_note, size: 28)),
             ),
           ),
           if (progress != null || minutesLeft != null)
@@ -343,7 +349,7 @@ class _ThumbArt extends StatelessWidget {
             left: 6,
             bottom: 6,
             child: NowPlayingIndicator(
-              trackId: videoId,
+              trackId: itemId,
               size: 16,
               color: Colors.white,
             ),
@@ -372,8 +378,13 @@ class _Overlay extends StatelessWidget {
                 alignment: Alignment.bottomRight,
                 child: Container(
                   margin: const EdgeInsets.all(4),
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  constraints: BoxConstraints(
+                    maxWidth: constraints.maxWidth * 0.5,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black87,
                     borderRadius: BorderRadius.circular(4),

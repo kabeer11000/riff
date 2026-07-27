@@ -16,7 +16,8 @@ class QueuePanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final state = ref.watch(playbackQueueProvider);
-    final remaining = state.tracks.length - (state.index + 1).clamp(0, state.tracks.length);
+    final remaining =
+        state.tracks.length - (state.index + 1).clamp(0, state.tracks.length);
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
       child: Column(
@@ -28,9 +29,7 @@ class QueuePanel extends ConsumerWidget {
               children: [
                 Expanded(
                   child: Text(
-                    state.isEmpty
-                        ? 'Up next'
-                        : 'Up next · $remaining',
+                    state.isEmpty ? 'Up next' : 'Up next · $remaining',
                     style: theme.textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -77,12 +76,10 @@ class QueuePanel extends ConsumerWidget {
                   track: track,
                   index: i,
                   isCurrent: isCurrent,
-                  onTap: () => ref
-                      .read(playbackQueueProvider.notifier)
-                      .jumpTo(i),
-                  onRemove: () => ref
-                      .read(playbackQueueProvider.notifier)
-                      .removeAt(i),
+                  onTap: () =>
+                      ref.read(playbackQueueProvider.notifier).jumpTo(i),
+                  onRemove: () =>
+                      ref.read(playbackQueueProvider.notifier).removeAt(i),
                 );
               },
             ),
@@ -139,10 +136,13 @@ class _QueueRow extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(8),
                 onTap: onTap,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 4,
+                    horizontal: 2,
+                  ),
                   child: Row(
                     children: [
-                      _Thumb(url: track.thumbnail, videoId: track.id),
+                      _Thumb(url: track.thumbnail),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Column(
@@ -154,12 +154,15 @@ class _QueueRow extends ConsumerWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight:
-                                    isCurrent ? FontWeight.w700 : FontWeight.w500,
+                                fontWeight: isCurrent
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
                               ),
                             ),
                             Text(
-                              track.uploader.isEmpty ? 'Unknown' : track.uploader,
+                              track.uploader.isEmpty
+                                  ? 'Unknown'
+                                  : track.uploader,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodySmall?.copyWith(
@@ -201,13 +204,11 @@ class _QueueRow extends ConsumerWidget {
 }
 
 class _Thumb extends StatelessWidget {
-  const _Thumb({required this.url, required this.videoId});
+  const _Thumb({required this.url});
   final String url;
-  final String videoId;
 
   @override
   Widget build(BuildContext context) {
-    final src = url.isEmpty ? 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg' : url;
     return ClipRRect(
       borderRadius: BorderRadius.circular(5),
       child: SizedBox(
@@ -215,7 +216,7 @@ class _Thumb extends StatelessWidget {
         child: AspectRatio(
           aspectRatio: 4 / 3,
           child: Image.network(
-            src,
+            url,
             fit: BoxFit.cover,
             errorBuilder: (_, _, _) => Container(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,

@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../api/models/history_entry.dart';
 import '../../api/models/playlist.dart';
 import '../../api/models/search_result.dart';
-import '../player/player_controller.dart';
+import '../player/queue_provider.dart';
 import '../search/search_controller.dart';
 import '../search/search_screen.dart';
 import 'playlist_card.dart';
@@ -193,16 +193,20 @@ class _HomeBody extends StatelessWidget {
     final topData = top;
     if (topData != null) {
       children.add(_TopChannelHeader(uploader: topData.uploader));
-      children.add(_GridOf(entries: topData.tracks, play: (e) {
-        ref.read(playerControllerProvider.notifier).play(_toSearchResult(e));
+      final topResults = topData.tracks.map(_toSearchResult).toList();
+      children.add(_GridOf(entries: topData.tracks, onTap: (i) {
+        ref.read(playbackQueueProvider.notifier).playFrom(topResults, i,
+            contextKind: 'channel', contextId: topData.uploader, contextTitle: topData.uploader);
       }));
     }
     if (data.entries.isNotEmpty) {
       // Search icon now lives in the top-level row above the body, so this
       // section header is purely a title — no trailing action needed.
       children.add(const _SectionHeader('Jump back in'));
-      children.add(_ListOf(entries: data.entries, play: (e) {
-        ref.read(playerControllerProvider.notifier).play(_toSearchResult(e));
+      final historyResults = data.entries.map(_toSearchResult).toList();
+      children.add(_ListOf(entries: data.entries, onTap: (i) {
+        ref.read(playbackQueueProvider.notifier).playFrom(historyResults, i,
+            contextKind: 'history');
       }));
     }
     if (playlists.isNotEmpty) {
@@ -313,16 +317,16 @@ SearchResult _toSearchResult(HistoryEntry e) => SearchResult(
     );
 
 class _ListOf extends StatelessWidget {
-  const _ListOf({required this.entries, required this.play});
+  const _ListOf({required this.entries, required this.onTap});
   final List<HistoryEntry> entries;
-  final void Function(HistoryEntry) play;
+  final void Function(int index) onTap;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        for (final e in entries) ...[
-          HistoryTile(entry: e, onTap: () => play(e)),
+        for (var i = 0; i < entries.length; i++) ...[
+          HistoryTile(entry: entries[i], onTap: () => onTap(i)),
           const Divider(height: 1, indent: 88, endIndent: 16),
         ],
       ],
@@ -331,9 +335,9 @@ class _ListOf extends StatelessWidget {
 }
 
 class _GridOf extends StatelessWidget {
-  const _GridOf({required this.entries, required this.play});
+  const _GridOf({required this.entries, required this.onTap});
   final List<HistoryEntry> entries;
-  final void Function(HistoryEntry) play;
+  final void Function(int index) onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -350,8 +354,7 @@ class _GridOf extends StatelessWidget {
         ),
         itemCount: entries.length,
         itemBuilder: (_, i) {
-          final e = entries[i];
-          return HistoryGridCard(entry: e, onTap: () => play(e));
+          return HistoryGridCard(entry: entries[i], onTap: () => onTap(i));
         },
       ),
     );

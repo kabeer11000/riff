@@ -1,18 +1,20 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'video_tab_provider.dart';
 
-/// Two-segment pill toggling the big player between cover art and the YouTube
-/// video embed. Only meaningful on web (the embed is web-only); callers gate
-/// on kIsWeb before rendering this.
+/// Pill switching the big player's main slot between cover art, the YouTube
+/// embed, and the queue. The Video segment is web-only (the embed is), so
+/// mobile shows Cover | Queue.
 class CoverVideoToggle extends ConsumerWidget {
   const CoverVideoToggle({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final videoOn = ref.watch(videoTabEnabledProvider);
+    final tab = ref.watch(playerTabProvider);
+    void select(PlayerTab t) => ref.read(playerTabProvider.notifier).set(t);
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
@@ -24,13 +26,19 @@ class CoverVideoToggle extends ConsumerWidget {
         children: [
           _Segment(
             label: 'Cover',
-            selected: !videoOn,
-            onTap: () => ref.read(videoTabEnabledProvider.notifier).set(false),
+            selected: tab == PlayerTab.cover,
+            onTap: () => select(PlayerTab.cover),
           ),
+          if (kIsWeb)
+            _Segment(
+              label: 'Video',
+              selected: tab == PlayerTab.video,
+              onTap: () => select(PlayerTab.video),
+            ),
           _Segment(
-            label: 'Video',
-            selected: videoOn,
-            onTap: () => ref.read(videoTabEnabledProvider.notifier).set(true),
+            label: 'Queue',
+            selected: tab == PlayerTab.queue,
+            onTap: () => select(PlayerTab.queue),
           ),
         ],
       ),
@@ -57,7 +65,7 @@ class _Segment extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
         decoration: BoxDecoration(
           color: selected ? theme.colorScheme.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(17),

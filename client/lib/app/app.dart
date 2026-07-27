@@ -11,6 +11,7 @@ import '../features/player/video_fullscreen_provider.dart';
 import '../features/player/video_tab_provider.dart';
 import '../features/player/youtube_embed.dart';
 import '../api/models/search_result.dart';
+import '../core/url_state.dart';
 import 'theme.dart';
 
 // Below this: mobile (home + bottom miniplayer). Between this and
@@ -43,11 +44,33 @@ class RiffApp extends StatelessWidget {
   }
 }
 
-class _HomeShell extends ConsumerWidget {
+class _HomeShell extends ConsumerStatefulWidget {
   const _HomeShell();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_HomeShell> createState() => _HomeShellState();
+}
+
+class _HomeShellState extends ConsumerState<_HomeShell> {
+  @override
+  void initState() {
+    super.initState();
+    // Restore ?v=<id> on cold load, paused. Skipped on tracks we already have
+    // (e.g. after a hot reload) so we don't kick off a duplicate play.
+    final id = readUrlState().videoId;
+    if (id != null && ref.read(playerControllerProvider).track?.id != id) {
+      // Defer to post-frame so PlayerController.build() can finish wiring
+      // its streams before playById() reads them.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ref.read(playerControllerProvider.notifier).playById(id);
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     // Auto-open the big-player sheet on mobile whenever a new track starts.
     // The desktop sidebar is already driven by hasTrack below.
     ref.listen<PlayerState>(playerControllerProvider, (prev, next) {

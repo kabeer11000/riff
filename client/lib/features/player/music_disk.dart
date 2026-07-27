@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'big_player.dart';
 import 'player_controller.dart';
+import 'queue_provider.dart';
 
 const _coverRadius = 12.0;
 
@@ -434,10 +435,27 @@ class _HorizontalScrubberState extends ConsumerState<HorizontalScrubber> {
                     milliseconds: (_scrubValue! * dur.inMilliseconds).round(),
                   )
                 : pos;
+            final hasNext = ref.watch(
+              playbackQueueProvider.select((q) => q.hasNext),
+            );
+            final hasPrevious = ref.watch(
+              playbackQueueProvider.select((q) => q.hasPrevious),
+            );
             return Padding(
               padding: EdgeInsets.symmetric(horizontal: widget.onVideo ? 0 : 4),
               child: Row(
                 children: [
+                  IconButton(
+                    iconSize: 28,
+                    color: fg,
+                    tooltip: 'Previous',
+                    onPressed: state.isLoading || !hasPrevious
+                        ? null
+                        : () => ref
+                            .read(playbackQueueProvider.notifier)
+                            .previous(),
+                    icon: const Icon(Icons.skip_previous_rounded),
+                  ),
                   IconButton(
                     iconSize: 36,
                     color: fg,
@@ -451,6 +469,17 @@ class _HorizontalScrubberState extends ConsumerState<HorizontalScrubber> {
                           ? Icons.pause_rounded
                           : Icons.play_arrow_rounded,
                     ),
+                  ),
+                  IconButton(
+                    iconSize: 28,
+                    color: fg,
+                    tooltip: 'Next',
+                    onPressed: state.isLoading || !hasNext
+                        ? null
+                        : () => ref
+                            .read(playbackQueueProvider.notifier)
+                            .next(),
+                    icon: const Icon(Icons.skip_next_rounded),
                   ),
                   Text(_fmtDuration(elapsed), style: timeStyle),
                   Expanded(

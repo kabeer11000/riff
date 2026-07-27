@@ -8,6 +8,7 @@ import 'cover_video_toggle.dart';
 import 'music_disk.dart';
 import 'player_controller.dart';
 import 'player_sheet_controller.dart';
+import 'queue_panel.dart';
 import 'video_fullscreen_provider.dart';
 import 'video_tab_provider.dart';
 import 'youtube_embed.dart';
@@ -366,76 +367,78 @@ class BigPlayer extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 8),
-                        if (kIsWeb) ...[
-                          const Center(child: CoverVideoToggle()),
-                          const SizedBox(height: 12),
-                        ],
-                        // Cover/video card sits on top of the ambient. When
-                        // fullscreen is on the embed has migrated to the
-                        // overlay; render only the cover here so we don't
-                        // double-mount the iframe.
+                        const Center(child: CoverVideoToggle()),
+                        const SizedBox(height: 12),
+                        // Cover / video / queue slot sits on top of the
+                        // ambient. When fullscreen is on, the embed has
+                        // migrated to the overlay so we render the cover
+                        // instead — never two iframes at once.
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: kIsWeb &&
-                                  ref.watch(videoTabEnabledProvider) &&
-                                  !isFullscreen
-                              ? YouTubeEmbed(videoId: track.id)
-                              : const CoverArt(),
+                          child: switch (ref.watch(playerTabProvider)) {
+                            PlayerTab.queue => const QueuePanel(),
+                            PlayerTab.video
+                                when kIsWeb && !isFullscreen =>
+                              YouTubeEmbed(videoId: track.id),
+                            _ => const CoverArt(),
+                          },
                         ),
-                        const SizedBox(height: 16),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: _Marquee(
-                            text: track.title,
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                            onTap: () => ScaffoldMessenger.of(context)
-                                .showSnackBar(
-                              SnackBar(content: Text('Track: ${track.title}')),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: InkWell(
-                            onTap: () =>
-                                ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Artist: ${track.uploader}'),
-                              ),
-                            ),
-                            child: Text(
-                              track.uploader.isEmpty
-                                  ? 'Unknown'
-                                  : track.uploader,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.left,
-                              style: theme.textTheme.bodyMedium?.copyWith(
+                        if (ref.watch(playerTabProvider) != PlayerTab.queue) ...[
+                          const SizedBox(height: 16),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: _Marquee(
+                              text: track.title,
+                              style: theme.textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.w700,
-                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                              onTap: () => ScaffoldMessenger.of(context)
+                                  .showSnackBar(
+                                SnackBar(content: Text('Track: ${track.title}')),
                               ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        _TrackMetaLine(
-                          artist: state.artist,
-                          album: state.album,
-                          releaseYear: state.releaseYear,
-                          viewCount: state.viewCount,
-                        ),
-                        const SizedBox(height: 24),
-                        kIsWeb && ref.watch(videoTabEnabledProvider)
-                            ? const SizedBox.shrink()
-                            : const Center(child: MusicDisk()),
-                        const SizedBox(height: 24),
-                        ExpandableDescription(description: state.description),
-                        const SizedBox(height: 24),
-                        const _ChannelSection(),
-                        const SizedBox(height: 32),
+                          const SizedBox(height: 4),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: InkWell(
+                              onTap: () =>
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Artist: ${track.uploader}'),
+                                ),
+                              ),
+                              child: Text(
+                                track.uploader.isEmpty
+                                    ? 'Unknown'
+                                    : track.uploader,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.left,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          _TrackMetaLine(
+                            artist: state.artist,
+                            album: state.album,
+                            releaseYear: state.releaseYear,
+                            viewCount: state.viewCount,
+                          ),
+                          const SizedBox(height: 24),
+                          kIsWeb && ref.watch(videoTabEnabledProvider)
+                              ? const SizedBox.shrink()
+                              : const Center(child: MusicDisk()),
+                          const SizedBox(height: 24),
+                          ExpandableDescription(description: state.description),
+                          const SizedBox(height: 24),
+                          const _ChannelSection(),
+                          const SizedBox(height: 32),
+                        ],
                       ],
                     ),
                   ),
@@ -564,90 +567,94 @@ class BigPlayerSidebar extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (kIsWeb)
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Center(child: CoverVideoToggle()),
-                          ),
-                          // Settings button on the right so the sidebar
-                          // surface has direct access to the ambient
-                          // toggle without opening the modal sheet.
-                          const _PlayerSettingsButton(),
-                        ],
-                      ),
-                    if (kIsWeb) const SizedBox(height: 12),
-                    // Cover/video card sits on top of the ambient. When
-                    // fullscreen is on the embed has migrated to the
-                    // overlay; render only the cover here.
-                    if (kIsWeb &&
-                        ref.watch(videoTabEnabledProvider) &&
-                        !ref.watch(fullscreenVideoProvider))
-                      YouTubeEmbed(
-                        videoId: track.id,
-                        showTheater: true,
-                      )
-                    else
-                      const CoverArt(),
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: _Marquee(
-                        text: track.title,
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Center(child: CoverVideoToggle()),
                         ),
-                        onTap: () =>
-                            ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Track: ${track.title}')),
-                        ),
-                      ),
+                        // Settings button on the right so the sidebar
+                        // surface has direct access to the ambient
+                        // toggle without opening the modal sheet.
+                        const _PlayerSettingsButton(),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: InkWell(
-                        onTap: () =>
-                            ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Artist: ${track.uploader}'),
-                          ),
+                    const SizedBox(height: 12),
+                    // Cover / video / queue slot sits on top of the
+                    // ambient. When fullscreen is on, the embed has
+                    // migrated to the overlay so we render the cover
+                    // instead.
+                    switch (ref.watch(playerTabProvider)) {
+                      PlayerTab.queue => const QueuePanel(),
+                      PlayerTab.video
+                          when kIsWeb &&
+                              !ref.watch(fullscreenVideoProvider) =>
+                        YouTubeEmbed(
+                          videoId: track.id,
+                          showTheater: true,
                         ),
-                        child: Text(
-                          track.uploader.isEmpty
-                              ? 'Unknown'
-                              : track.uploader,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.left,
-                          style: theme.textTheme.bodyMedium?.copyWith(
+                      _ => const CoverArt(),
+                    },
+                    if (ref.watch(playerTabProvider) != PlayerTab.queue) ...[
+                      const SizedBox(height: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: _Marquee(
+                          text: track.title,
+                          style: theme.textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.w700,
-                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          onTap: () =>
+                              ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Track: ${track.title}')),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    _TrackMetaLine(
-                      artist: state.artist,
-                      album: state.album,
-                      releaseYear: state.releaseYear,
-                      viewCount: state.viewCount,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                    const SizedBox(height: 16),
-                    kIsWeb && ref.watch(videoTabEnabledProvider)
-                        ? const SizedBox.shrink()
-                        : const Center(child: MusicDisk()),
-                    const SizedBox(height: 16),
-                    ExpandableDescription(
-                      description: state.description,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                    const SizedBox(height: 16),
-                    const _ChannelSection(
-                      padding: EdgeInsets.symmetric(horizontal: 8),
-                    ),
+                      const SizedBox(height: 4),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: InkWell(
+                          onTap: () =>
+                              ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Artist: ${track.uploader}'),
+                            ),
+                          ),
+                          child: Text(
+                            track.uploader.isEmpty
+                                ? 'Unknown'
+                                : track.uploader,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.left,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      _TrackMetaLine(
+                        artist: state.artist,
+                        album: state.album,
+                        releaseYear: state.releaseYear,
+                        viewCount: state.viewCount,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      const SizedBox(height: 16),
+                      kIsWeb && ref.watch(videoTabEnabledProvider)
+                          ? const SizedBox.shrink()
+                          : const Center(child: MusicDisk()),
+                      const SizedBox(height: 16),
+                      ExpandableDescription(
+                        description: state.description,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      const SizedBox(height: 16),
+                      const _ChannelSection(
+                        padding: EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../player/player_controller.dart';
+import '../player/queue_provider.dart';
 import 'search_controller.dart';
 import 'widgets/search_result_tile.dart';
 
@@ -169,7 +169,9 @@ class _SearchBodyState extends ConsumerState<_SearchBody> {
                   final r = results[i];
                   return SearchResultTile(
                     result: r,
-                    onTap: () => ref.read(playerControllerProvider.notifier).play(r),
+                    onTap: () => ref
+                        .read(playbackQueueProvider.notifier)
+                        .playFrom(results, i),
                   );
                 },
               );

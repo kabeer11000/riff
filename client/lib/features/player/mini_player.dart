@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'big_player.dart';
 import 'player_controller.dart';
+import 'queue_provider.dart';
 
 class MiniPlayer extends ConsumerWidget {
   const MiniPlayer({super.key, this.floating = false});
@@ -17,6 +18,12 @@ class MiniPlayer extends ConsumerWidget {
     final state = ref.watch(playerControllerProvider);
     final track = state.track;
     if (track == null) return const SizedBox.shrink();
+    final hasNext = ref.watch(
+      playbackQueueProvider.select((q) => q.hasNext),
+    );
+    final hasPrevious = ref.watch(
+      playbackQueueProvider.select((q) => q.hasPrevious),
+    );
 
     final theme = Theme.of(context);
     final content = InkWell(
@@ -77,7 +84,17 @@ class MiniPlayer extends ConsumerWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               )
-            else
+            else ...[
+              IconButton(
+                tooltip: 'Previous',
+                iconSize: 22,
+                onPressed: hasPrevious
+                    ? () => ref
+                        .read(playbackQueueProvider.notifier)
+                        .previous()
+                    : null,
+                icon: const Icon(Icons.skip_previous),
+              ),
               IconButton(
                 onPressed: state.error != null
                     ? null
@@ -86,6 +103,15 @@ class MiniPlayer extends ConsumerWidget {
                           .togglePlayPause(),
                 icon: Icon(state.isPlaying ? Icons.pause : Icons.play_arrow),
               ),
+              IconButton(
+                tooltip: 'Next',
+                iconSize: 22,
+                onPressed: hasNext
+                    ? () => ref.read(playbackQueueProvider.notifier).next()
+                    : null,
+                icon: const Icon(Icons.skip_next),
+              ),
+            ],
           ],
         ),
       ),

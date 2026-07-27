@@ -6,7 +6,9 @@ import 'package:just_audio/just_audio.dart' as ja;
 import '../../api/endpoints/history.dart';
 import '../../api/endpoints/tracks.dart';
 import '../../api/models/search_result.dart';
+import '../../core/url_state.dart';
 import '../search/search_controller.dart';
+import 'queue_provider.dart';
 
 final tracksApiProvider = Provider<TracksApi>(
   (ref) => TracksApi(ref.watch(apiClientProvider)),
@@ -88,6 +90,9 @@ class PlayerController extends Notifier<PlayerState> {
   // bail out at each await so a stale setUrl/play() can't overwrite the
   // player when a newer track has been requested.
   int _playRequestId = 0;
+  // Guards auto-advance: just_audio can report `completed` on more than one
+  // stream event, and we only want one queue advance per loaded source.
+  bool _completedFired = false;
   // Single-flight chain: every play() awaits the previous one so the
   // underlying AudioPlayer never receives overlapping setUrl/stop calls.
   Future<void> _audioChain = Future.value();
@@ -113,6 +118,13 @@ class PlayerController extends Notifier<PlayerState> {
           ps.playing && ps.processingState != ja.ProcessingState.completed;
       state = state.copyWith(isPlaying: nowPlaying);
       if (wasPlaying && !nowPlaying) _onPauseOrStop();
+      // End of track: hand off to the queue. Stops naturally at the end of
+      // the queue because advance() is a no-op when there's no next track.
+      if (ps.processingState == ja.ProcessingState.completed &&
+          !_completedFired) {
+        _completedFired = true;
+        ref.read(playbackQueueProvider.notifier).advance();
+      }
     });
     ref.onDispose(() {
       _sub?.cancel();
@@ -123,13 +135,19 @@ class PlayerController extends Notifier<PlayerState> {
 
   /// [contextKind] is one of "search" | "playlist" | "channel" | "library".
   /// Defaults to search; callers wire playlists/channels as those screens land.
+  ///
+  /// [autoStart] false loads the source paused — used when restoring from the
+  /// URL on a cold load, where browsers block autoplay without a gesture and
+  /// silently starting audio on refresh would be hostile anyway.
   Future<void> play(
     SearchResult track, {
     String contextKind = 'search',
     String contextId = '',
     String contextTitle = '',
+    bool autoStart = true,
   }) async {
     final requestId = ++_playRequestId;
+    _completedFired = false;
     _cancelHistory();
     _contextKind = contextKind;
     _contextId = contextId;
@@ -137,6 +155,8 @@ class PlayerController extends Notifier<PlayerState> {
     // State flips synchronously: the UI shows the new track + spinner and
     // (on mobile) the big player opens immediately.
     state = state.copyWith(track: track, isLoading: true, clearError: true);
+    // Single choke point for URL sync: every play path lands here.
+    syncPlayerUrl(videoId: track.id);
     // Pause any in-flight playback so the previous track stops bleeding
     // through the gap before the new source is ready. Fire-and-forget so
     // the state update is visible on the same frame.
@@ -168,14 +188,37 @@ class PlayerController extends Notifier<PlayerState> {
         uploadDate: info.uploadDate,
         viewCount: info.viewCount,
       );
-      unawaited(_player.play());
-      _recordPlay(position: 0);
-      _startHistoryTimer();
+      if (autoStart) {
+        unawaited(_player.play());
+        _recordPlay(position: 0);
+        _startHistoryTimer();
+      }
     } catch (e) {
       if (requestId != _playRequestId) return;
       state = state.copyWith(isLoading: false, error: e);
     } finally {
       completer.complete();
+    }
+  }
+
+  /// Load a track by id alone, paused. Used to restore `?v=<id>` on a cold
+  /// load, where all we have is the id — [TracksApi.get] fills in the rest.
+  Future<void> playById(String videoId) async {
+    try {
+      final info = await ref.read(tracksApiProvider).get(videoId);
+      await play(
+        SearchResult(
+          id: info.id,
+          title: info.title,
+          uploader: info.uploader,
+          duration: info.duration,
+          thumbnail: info.thumbnail,
+          type: 'audio',
+        ),
+        autoStart: false,
+      );
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e);
     }
   }
 
@@ -193,6 +236,7 @@ class PlayerController extends Notifier<PlayerState> {
   Future<void> stop() async {
     _recordFinalPosition();
     _cancelHistory();
+    syncPlayerUrl();
     await _player.stop();
     state = state.copyWith(
       track: null,

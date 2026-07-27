@@ -30,7 +30,12 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-/build/
+# 1. Ignore everything inside the build folder
+build/*
+
+# 2. Allow the web folder to be tracked
+!build/web/
+
 /coverage/
 
 # Symbolication related

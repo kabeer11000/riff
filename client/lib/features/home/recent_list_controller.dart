@@ -337,43 +337,48 @@ class _Overlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (minutesLeft != null)
-          Align(
-            alignment: Alignment.bottomRight,
-            child: Container(
-              margin: const EdgeInsets.all(4),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.black87,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                minutesLeft!,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (minutesLeft != null)
+              Align(
+                alignment: Alignment.bottomRight,
+                child: Container(
+                  margin: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.5),
+                  decoration: BoxDecoration(
+                    color: Colors.black87,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    minutesLeft!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-        if (progress != null)
-          ClipRRect(
-            borderRadius: const BorderRadius.only(
-              bottomLeft: Radius.circular(10),
-              bottomRight: Radius.circular(10),
-            ),
-            child: LinearProgressIndicator(
-              value: progress!.clamp(0.0, 1.0),
-              minHeight: 3,
-              backgroundColor: Colors.transparent,
-              valueColor: AlwaysStoppedAnimation(theme.colorScheme.primary),
-            ),
-          ),
-      ],
+            if (progress != null)
+              SizedBox(
+                width: constraints.maxWidth,
+                height: 3,
+                child: LinearProgressIndicator(
+                  value: progress!.clamp(0.0, 1.0),
+                  minHeight: 3,
+                  backgroundColor: Colors.white.withValues(alpha: 0.18),
+                  valueColor: AlwaysStoppedAnimation(theme.colorScheme.primary),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }

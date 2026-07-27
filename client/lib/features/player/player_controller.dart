@@ -25,13 +25,24 @@ class PlayerState {
   const PlayerState({
     this.track,
     this.description = '',
+    this.artist = '',
+    this.album = '',
+    this.uploadDate = '',
+    this.viewCount = 0,
     this.isLoading = false,
     this.isPlaying = false,
     this.error,
   });
 
   final SearchResult? track;
+  // Surface fields lifted off the resolved TrackInfo so the player UI can
+  // render without making a second fetch.
   final String description;
+  final String artist;
+  final String album;
+  /// YYYYMMDD string from yt-dlp; '' if unknown.
+  final String uploadDate;
+  final double viewCount;
   final bool isLoading;
   final bool isPlaying;
   final Object? error;
@@ -39,6 +50,10 @@ class PlayerState {
   PlayerState copyWith({
     SearchResult? track,
     String? description,
+    String? artist,
+    String? album,
+    String? uploadDate,
+    double? viewCount,
     bool? isLoading,
     bool? isPlaying,
     Object? error,
@@ -47,10 +62,20 @@ class PlayerState {
   }) => PlayerState(
     track: clearTrack ? null : (track ?? this.track),
     description: description ?? this.description,
+    artist: artist ?? this.artist,
+    album: album ?? this.album,
+    uploadDate: uploadDate ?? this.uploadDate,
+    viewCount: viewCount ?? this.viewCount,
     isLoading: isLoading ?? this.isLoading,
     isPlaying: isPlaying ?? this.isPlaying,
     error: clearError ? null : (error ?? this.error),
   );
+
+  /// Release year parsed from [uploadDate]. Null when unparseable.
+  int? get releaseYear {
+    if (uploadDate.length < 4) return null;
+    return int.tryParse(uploadDate.substring(0, 4));
+  }
 }
 
 final playerControllerProvider =
@@ -135,7 +160,14 @@ class PlayerController extends Notifier<PlayerState> {
       if (requestId != _playRequestId) return;
       // Spinner off here: source is loaded and ready. Buffering state during
       // playback is normal and would re-trigger the spinner via the stream.
-      state = state.copyWith(isLoading: false, description: info.description);
+      state = state.copyWith(
+        isLoading: false,
+        description: info.description,
+        artist: info.artist,
+        album: info.album,
+        uploadDate: info.uploadDate,
+        viewCount: info.viewCount,
+      );
       unawaited(_player.play());
       _recordPlay(position: 0);
       _startHistoryTimer();

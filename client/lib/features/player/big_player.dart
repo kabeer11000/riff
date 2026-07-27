@@ -12,10 +12,64 @@ import 'youtube_embed.dart';
 
 const _marqueeDuration = Duration(seconds: 8);
 
+/// Single dimmed line showing whatever optional metadata we have for the
+/// current track. Joins available fields with ` • `. Returns nothing when no
+/// metadata is available so the description below has the space to itself.
+class _TrackMetaLine extends StatelessWidget {
+  const _TrackMetaLine({
+    required this.artist,
+    required this.album,
+    required this.releaseYear,
+    required this.viewCount,
+    this.padding = const EdgeInsets.symmetric(horizontal: 16),
+  });
+
+  final String artist;
+  final String album;
+  final int? releaseYear;
+  final double viewCount;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = <String>[];
+    if (artist.isNotEmpty) parts.add(artist);
+    if (album.isNotEmpty) parts.add(album);
+    if (releaseYear != null) parts.add('$releaseYear');
+    if (viewCount > 0) parts.add(_formatViews(viewCount));
+    if (parts.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    return Padding(
+      padding: padding,
+      child: Text(
+        parts.join(' • '),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
+  // Compact view count: 1234 -> 1.2K, 1_500_000 -> 1.5M.
+  static String _formatViews(double v) {
+    if (v >= 1e9) return '${(v / 1e9).toStringAsFixed(1)}B views';
+    if (v >= 1e6) return '${(v / 1e6).toStringAsFixed(1)}M views';
+    if (v >= 1e3) return '${(v / 1e3).toStringAsFixed(1)}K views';
+    return '${v.toStringAsFixed(0)} views';
+  }
+}
+
 class ExpandableDescription extends StatefulWidget {
-  const ExpandableDescription({super.key, required this.description});
+  const ExpandableDescription({
+    super.key,
+    required this.description,
+    this.padding = const EdgeInsets.symmetric(horizontal: 16),
+  });
 
   final String description;
+  final EdgeInsetsGeometry padding;
 
   @override
   State<ExpandableDescription> createState() => _ExpandableDescriptionState();
@@ -30,7 +84,7 @@ class _ExpandableDescriptionState extends State<ExpandableDescription> {
     final theme = Theme.of(context);
     final lines = _expanded ? null : 2;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: widget.padding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -200,6 +254,13 @@ class BigPlayer extends ConsumerWidget {
                 ),
               ),
             ),
+            const SizedBox(height: 6),
+            _TrackMetaLine(
+              artist: state.artist,
+              album: state.album,
+              releaseYear: state.releaseYear,
+              viewCount: state.viewCount,
+            ),
             const SizedBox(height: 12),
             ExpandableDescription(description: state.description),
             const SizedBox(height: 32),
@@ -314,8 +375,19 @@ class BigPlayerSidebar extends ConsumerWidget {
                     ),
                   ),
                 ),
+                const SizedBox(height: 6),
+                _TrackMetaLine(
+                  artist: state.artist,
+                  album: state.album,
+                  releaseYear: state.releaseYear,
+                  viewCount: state.viewCount,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
                 const SizedBox(height: 12),
-                ExpandableDescription(description: state.description),
+                ExpandableDescription(
+                  description: state.description,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
                 const SizedBox(height: 32),
                 kIsWeb && ref.watch(videoTabEnabledProvider)
                     ? const SizedBox.shrink()

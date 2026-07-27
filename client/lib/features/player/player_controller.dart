@@ -24,18 +24,21 @@ const _historySyncInterval = Duration(seconds: 30);
 class PlayerState {
   const PlayerState({
     this.track,
+    this.description = '',
     this.isLoading = false,
     this.isPlaying = false,
     this.error,
   });
 
   final SearchResult? track;
+  final String description;
   final bool isLoading;
   final bool isPlaying;
   final Object? error;
 
   PlayerState copyWith({
     SearchResult? track,
+    String? description,
     bool? isLoading,
     bool? isPlaying,
     Object? error,
@@ -43,6 +46,7 @@ class PlayerState {
     bool clearTrack = false,
   }) => PlayerState(
     track: clearTrack ? null : (track ?? this.track),
+    description: description ?? this.description,
     isLoading: isLoading ?? this.isLoading,
     isPlaying: isPlaying ?? this.isPlaying,
     error: clearError ? null : (error ?? this.error),
@@ -131,7 +135,7 @@ class PlayerController extends Notifier<PlayerState> {
       if (requestId != _playRequestId) return;
       // Spinner off here: source is loaded and ready. Buffering state during
       // playback is normal and would re-trigger the spinner via the stream.
-      state = state.copyWith(isLoading: false);
+      state = state.copyWith(isLoading: false, description: info.description);
       unawaited(_player.play());
       _recordPlay(position: 0);
       _startHistoryTimer();

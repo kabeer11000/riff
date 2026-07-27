@@ -9,6 +9,7 @@ class TrackInfo {
     required this.duration,
     required this.thumbnail,
     required this.formats,
+    this.description = '',
   });
 
   factory TrackInfo.fromJson(Map<String, dynamic> j) => TrackInfo(
@@ -21,6 +22,7 @@ class TrackInfo {
         formats: ((j['formats'] as List?) ?? const [])
             .map((e) => FormatInfo.fromJson(e as Map<String, dynamic>))
             .toList(),
+        description: j['description'] as String? ?? '',
       );
 
   final String id;
@@ -30,6 +32,7 @@ class TrackInfo {
   final double duration;
   final String thumbnail;
   final List<FormatInfo> formats;
+  final String description;
 
   /// Best audio format by ABR. The backend picks a directly-proxyable format
   /// with the highest bitrate; we mirror that on the client as a sanity check.

@@ -12,6 +12,56 @@ import 'youtube_embed.dart';
 
 const _marqueeDuration = Duration(seconds: 8);
 
+class ExpandableDescription extends StatefulWidget {
+  const ExpandableDescription({super.key, required this.description});
+
+  final String description;
+
+  @override
+  State<ExpandableDescription> createState() => _ExpandableDescriptionState();
+}
+
+class _ExpandableDescriptionState extends State<ExpandableDescription> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.description.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final lines = _expanded ? null : 2;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Text(
+              widget.description,
+              maxLines: lines,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          if (!_expanded)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                'more',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Tag used by both the miniplayer and the big-player cover so the Hero
 /// morph animates the cover from the bottom-right mini into the big player.
 String playerCoverHeroTag(String videoId) => 'player-cover-$videoId';
@@ -150,6 +200,8 @@ class BigPlayer extends ConsumerWidget {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+            ExpandableDescription(description: state.description),
             const SizedBox(height: 32),
             kIsWeb && ref.watch(videoTabEnabledProvider)
                 ? const SizedBox.shrink()
@@ -262,6 +314,8 @@ class BigPlayerSidebar extends ConsumerWidget {
                     ),
                   ),
                 ),
+                const SizedBox(height: 12),
+                ExpandableDescription(description: state.description),
                 const SizedBox(height: 32),
                 kIsWeb && ref.watch(videoTabEnabledProvider)
                     ? const SizedBox.shrink()

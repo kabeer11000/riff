@@ -15,14 +15,8 @@ class LibrarySidebar extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: theme.brightness == Brightness.dark
-            ? AppPalette.maroonDeep
+            ? AppPalette.gray900
             : theme.colorScheme.surfaceContainer,
-        border: Border(
-          right: BorderSide(
-            color: theme.colorScheme.outlineVariant,
-            width: 1,
-          ),
-        ),
       ),
       child: SafeArea(
         right: false,

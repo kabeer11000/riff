@@ -43,7 +43,11 @@
       "Bash(nohup /tmp/riff-server)",
       "Bash(disown)",
       "Bash(find *)",
-      "Bash(wc *)"
+      "Bash(wc *)",
+      "Bash(go doc *)",
+      "Bash(go run *)",
+      "Bash(nohup ./riff-server)",
+      "Bash(disown sleep *)"
     ]
   }
 }

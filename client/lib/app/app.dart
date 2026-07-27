@@ -22,6 +22,11 @@ const _librarySidebarWidth = 300.0;
 const _playerSidebarWidth = 400.0;
 const _theaterAnim = Duration(milliseconds: 280);
 const _theaterCurve = Curves.easeInOutCubic;
+// Panel spacing on wide/desktop layouts: each panel gets a black gap on
+// every side that borders another panel, with rounded corners so the
+// panels read as distinct cards.
+const _panelGap = 6.0;
+const _panelRadius = 16.0;
 
 class RiffApp extends StatelessWidget {
   const RiffApp({super.key});
@@ -67,6 +72,7 @@ class _HomeShell extends ConsumerWidget {
     final track = ref.watch(playerControllerProvider.select((s) => s.track));
 
     return Scaffold(
+      backgroundColor: AppPalette.blackPure,
       body: Stack(
         children: [
           LayoutBuilder(
@@ -92,18 +98,34 @@ class _HomeShell extends ConsumerWidget {
                           alignment: Alignment.centerLeft,
                           child: const SizedBox(
                             width: _librarySidebarWidth,
-                            child: LibrarySidebar(),
+                            child: _Panel(
+                              rightGap: _panelGap,
+                              topGap: _panelGap,
+                              bottomGap: _panelGap,
+                              child: LibrarySidebar(),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                    const Expanded(child: HomeScreen()),
+                    const Expanded(
+                      child: _Panel(
+                        rightGap: _panelGap,
+                        topGap: _panelGap,
+                        bottomGap: _panelGap,
+                        child: HomeScreen(),
+                      ),
+                    ),
                     if (hasTrack)
                       AnimatedContainer(
                         duration: _theaterAnim,
                         curve: _theaterCurve,
                         width: playerWidth,
-                        child: const BigPlayerSidebar(),
+                        child: _Panel(
+                          topGap: _panelGap,
+                          bottomGap: _panelGap,
+                          child: const BigPlayerSidebar(),
+                        ),
                       ),
                   ],
                 );
@@ -112,13 +134,24 @@ class _HomeShell extends ConsumerWidget {
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Expanded(child: HomeScreen()),
+                    const Expanded(
+                      child: _Panel(
+                        rightGap: _panelGap,
+                        topGap: _panelGap,
+                        bottomGap: _panelGap,
+                        child: HomeScreen(),
+                      ),
+                    ),
                     if (hasTrack)
                       AnimatedContainer(
                         duration: _theaterAnim,
                         curve: _theaterCurve,
                         width: playerWidth,
-                        child: const BigPlayerSidebar(),
+                        child: _Panel(
+                          topGap: _panelGap,
+                          bottomGap: _panelGap,
+                          child: const BigPlayerSidebar(),
+                        ),
                       ),
                   ],
                 );
@@ -143,6 +176,36 @@ class _HomeShell extends ConsumerWidget {
           if (fullscreen && track != null)
             Positioned.fill(child: _FullscreenVideoOverlay(track: track)),
         ],
+      ),
+    );
+  }
+}
+
+/// Wraps a panel with a black gap on each side that borders another panel and
+/// rounds the corners so the panel reads as a distinct card. The inner widget
+/// owns its own background — ClipRRect just frames it.
+class _Panel extends StatelessWidget {
+  const _Panel({
+    required this.child,
+    this.leftGap = 0,
+    this.rightGap = 0,
+    this.topGap = 0,
+    this.bottomGap = 0,
+  });
+
+  final Widget child;
+  final double leftGap;
+  final double rightGap;
+  final double topGap;
+  final double bottomGap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(leftGap, topGap, rightGap, bottomGap),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(_panelRadius),
+        child: child,
       ),
     );
   }

@@ -1,34 +1,36 @@
 import 'package:flutter/material.dart';
 
-/// Black / white / dark-maroon palette.
-///
-/// Light mode: white surface, dark maroon as the primary brand color,
-/// neutral grays for elevated surfaces. Dark mode: black surface, dark
-/// maroon tints for elevated surfaces, maroon for primary accents.
+/// Monochrome black + light-gray palette. No brand color — the design
+/// relies on weight, contrast, and elevation rather than hue.
 class AppPalette {
   static const white = Color(0xFFFFFFFF);
-  static const black = Color(0xFF1A1410); // warm near-black, not pure
+  static const black = Color(0xFF0A0A0A);
   static const blackPure = Color(0xFF000000);
-  static const maroon = Color(0xFF5C0E14);
-  static const maroonDeep = Color(0xFF3A080C);
-  static const maroonSoft = Color(0xFF8B1A24);
+  static const gray900 = Color(0xFF1A1A1A);
+  static const gray800 = Color(0xFF2A2A2A);
+  static const gray700 = Color(0xFF3F3F3F);
+  static const gray500 = Color(0xFF8A8A8A);
+  static const gray300 = Color(0xFFC8C8C8);
+  static const gray200 = Color(0xFFE2E2E2);
+  static const gray100 = Color(0xFFF0F0F0);
+  static const gray50 = Color(0xFFF7F7F7);
 }
 
 class AppTheme {
   static ThemeData light() {
     const scheme = ColorScheme(
       brightness: Brightness.light,
-      primary: AppPalette.maroon,
+      primary: AppPalette.black,
       onPrimary: AppPalette.white,
-      primaryContainer: Color(0xFFEAD4D6),
-      onPrimaryContainer: AppPalette.maroonDeep,
-      secondary: AppPalette.maroonSoft,
+      primaryContainer: AppPalette.gray200,
+      onPrimaryContainer: AppPalette.black,
+      secondary: AppPalette.gray700,
       onSecondary: AppPalette.white,
-      secondaryContainer: Color(0xFFEAD4D6),
+      secondaryContainer: AppPalette.gray100,
       onSecondaryContainer: AppPalette.black,
-      tertiary: AppPalette.maroonDeep,
+      tertiary: AppPalette.gray500,
       onTertiary: AppPalette.white,
-      tertiaryContainer: Color(0xFFEAD4D6),
+      tertiaryContainer: AppPalette.gray100,
       onTertiaryContainer: AppPalette.black,
       error: Color(0xFFB3261E),
       onError: AppPalette.white,
@@ -37,19 +39,19 @@ class AppTheme {
       surface: AppPalette.white,
       onSurface: AppPalette.black,
       surfaceContainerLowest: AppPalette.white,
-      surfaceContainerLow: Color(0xFFFAF5F5),
-      surfaceContainer: Color(0xFFF2EAEA),
-      surfaceContainerHigh: Color(0xFFE8DADA),
-      surfaceContainerHighest: Color(0xFFDCCCCC),
-      onSurfaceVariant: Color(0xFF52474A),
-      outline: Color(0xFF857075),
-      outlineVariant: Color(0xFFD6C7C9),
-      inverseSurface: AppPalette.maroonDeep,
-      onInverseSurface: Color(0xFFEAD4D6),
-      inversePrimary: AppPalette.maroonSoft,
+      surfaceContainerLow: AppPalette.gray50,
+      surfaceContainer: AppPalette.gray100,
+      surfaceContainerHigh: AppPalette.gray200,
+      surfaceContainerHighest: AppPalette.gray300,
+      onSurfaceVariant: AppPalette.gray700,
+      outline: AppPalette.gray500,
+      outlineVariant: AppPalette.gray200,
+      inverseSurface: AppPalette.black,
+      onInverseSurface: AppPalette.white,
+      inversePrimary: AppPalette.gray300,
       shadow: AppPalette.black,
       scrim: AppPalette.black,
-      surfaceTint: AppPalette.maroon,
+      surfaceTint: AppPalette.black,
     );
     return _base(scheme);
   }
@@ -57,38 +59,38 @@ class AppTheme {
   static ThemeData dark() {
     const scheme = ColorScheme(
       brightness: Brightness.dark,
-      primary: AppPalette.maroonSoft,
-      onPrimary: AppPalette.white,
-      primaryContainer: AppPalette.maroonDeep,
-      onPrimaryContainer: Color(0xFFEAD4D6),
-      secondary: AppPalette.maroon,
-      onSecondary: AppPalette.white,
-      secondaryContainer: AppPalette.maroonDeep,
-      onSecondaryContainer: Color(0xFFEAD4D6),
-      tertiary: AppPalette.maroonSoft,
-      onTertiary: AppPalette.white,
-      tertiaryContainer: AppPalette.maroonDeep,
-      onTertiaryContainer: Color(0xFFEAD4D6),
+      primary: AppPalette.white,
+      onPrimary: AppPalette.black,
+      primaryContainer: AppPalette.gray700,
+      onPrimaryContainer: AppPalette.white,
+      secondary: AppPalette.gray300,
+      onSecondary: AppPalette.black,
+      secondaryContainer: AppPalette.gray800,
+      onSecondaryContainer: AppPalette.white,
+      tertiary: AppPalette.gray500,
+      onTertiary: AppPalette.black,
+      tertiaryContainer: AppPalette.gray800,
+      onTertiaryContainer: AppPalette.white,
       error: Color(0xFFF2B8B5),
       onError: Color(0xFF601410),
       errorContainer: Color(0xFF8C1D18),
       onErrorContainer: Color(0xFFF9DEDC),
-      surface: AppPalette.blackPure,
+      surface: AppPalette.gray900,
       onSurface: AppPalette.white,
       surfaceContainerLowest: AppPalette.blackPure,
-      surfaceContainerLow: Color(0xFF0A0A0A),
-      surfaceContainer: Color(0xFF101010),
-      surfaceContainerHigh: Color(0xFF1A1A1A),
-      surfaceContainerHighest: Color(0xFF222222),
-      onSurfaceVariant: Color(0xFFBFB3B5),
-      outline: Color(0xFF5C4F51),
-      outlineVariant: Color(0xFF2A2224),
-      inverseSurface: Color(0xFFEAD4D6),
-      onInverseSurface: AppPalette.maroonDeep,
-      inversePrimary: AppPalette.maroon,
+      surfaceContainerLow: AppPalette.gray900,
+      surfaceContainer: AppPalette.gray800,
+      surfaceContainerHigh: Color(0xFF333333),
+      surfaceContainerHighest: Color(0xFF404040),
+      onSurfaceVariant: AppPalette.gray300,
+      outline: AppPalette.gray700,
+      outlineVariant: AppPalette.gray900,
+      inverseSurface: AppPalette.white,
+      onInverseSurface: AppPalette.black,
+      inversePrimary: AppPalette.gray700,
       shadow: AppPalette.blackPure,
       scrim: AppPalette.blackPure,
-      surfaceTint: AppPalette.maroonSoft,
+      surfaceTint: AppPalette.white,
     );
     return _base(scheme);
   }

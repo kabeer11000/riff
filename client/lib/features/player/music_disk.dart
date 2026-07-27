@@ -147,7 +147,7 @@ class _CoverProgressBar extends StatelessWidget {
               Container(color: Colors.white.withValues(alpha: 0.18)),
               FractionallySizedBox(
                 widthFactor: fraction,
-                child: Container(color: Colors.red),
+                child: Container(color: Colors.white),
               ),
             ],
           );

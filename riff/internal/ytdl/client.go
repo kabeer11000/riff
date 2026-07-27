@@ -57,12 +57,17 @@ func (c *Client) Resolve(ctx context.Context, videoID string) (domain.TrackInfo,
 	}
 	info := res.Info
 	ti := domain.TrackInfo{
-		ID:        info.ID,
-		Title:     info.Title,
-		Uploader:  firstNonEmpty(info.Uploader, info.Channel),
-		ChannelID: info.ChannelID,
-		Duration:  info.Duration,
-		Thumbnail: info.Thumbnail,
+		ID:          info.ID,
+		Title:       info.Title,
+		Uploader:    firstNonEmpty(info.Uploader, info.Channel),
+		ChannelID:   info.ChannelID,
+		Duration:    info.Duration,
+		Thumbnail:   info.Thumbnail,
+		Description: info.Description,
+		Artist:      info.Artist,
+		Album:       info.Album,
+		UploadDate:  info.UploadDate,
+		ViewCount:   info.ViewCount,
 	}
 	for _, f := range formats {
 		if f.Kind == "" {

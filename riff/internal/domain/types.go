@@ -27,13 +27,18 @@ type FormatInfo struct {
 
 // TrackInfo is resolved metadata for a single YouTube video.
 type TrackInfo struct {
-	ID        string       `json:"id"`
-	Title     string       `json:"title"`
-	Uploader  string       `json:"uploader"`
-	ChannelID string       `json:"channelId"`
-	Duration  float64      `json:"duration"`
-	Thumbnail string       `json:"thumbnail"`
-	Formats   []FormatInfo `json:"formats"`
+	ID          string       `json:"id"`
+	Title       string       `json:"title"`
+	Uploader    string       `json:"uploader"`
+	ChannelID   string       `json:"channelId"`
+	Duration    float64      `json:"duration"`
+	Thumbnail   string       `json:"thumbnail"`
+	Description string       `json:"description"`
+	Artist      string       `json:"artist"`
+	Album       string       `json:"album"`
+	UploadDate  string       `json:"uploadDate"`
+	ViewCount   float64      `json:"viewCount"`
+	Formats     []FormatInfo `json:"formats"`
 }
 
 // ExternalPlaylist / ExternalChannel are flat listings resolved live from YouTube.

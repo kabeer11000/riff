@@ -1,0 +1,51 @@
+package config
+
+import (
+	"os"
+	"strconv"
+	"time"
+)
+
+// Config holds runtime configuration, all sourced from environment variables.
+type Config struct {
+	Port            string        // HTTP listen port
+	DBPath          string        // SQLite file path
+	YTDLPPath       string        // path to yt-dlp/youtube-dl binary; empty = look up on PATH
+	CacheMaxTTL     time.Duration // ceiling for cached resolved stream URLs (googlevideo)
+	CacheMetadataTTL time.Duration // metadata responses (tracks, channels, external playlists) — stable
+	CacheSearchTTL   time.Duration // search results — churn more
+	PublicBaseURL   string        // base URL used when building shareable links
+}
+
+func Load() Config {
+	return Config{
+		Port:             env("PORT", "8080"),
+		DBPath:           env("DB_PATH", "riff.db"),
+		YTDLPPath:        env("YTDLP_PATH", ""),
+		CacheMaxTTL:      envDuration("CACHE_MAX_TTL", 5*time.Minute),
+		CacheMetadataTTL: envDuration("CACHE_METADATA_TTL", time.Hour),
+		CacheSearchTTL:   envDuration("CACHE_SEARCH_TTL", 5*time.Minute),
+		PublicBaseURL:    env("PUBLIC_BASE_URL", "http://localhost:8080"),
+	}
+}
+
+func env(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func envDuration(key string, def time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	if d, err := time.ParseDuration(v); err == nil {
+		return d
+	}
+	if secs, err := strconv.Atoi(v); err == nil {
+		return time.Duration(secs) * time.Second
+	}
+	return def
+}

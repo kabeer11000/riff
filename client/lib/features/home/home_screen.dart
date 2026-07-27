@@ -1,0 +1,395 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../api/models/history_entry.dart';
+import '../../api/models/playlist.dart';
+import '../../api/models/search_result.dart';
+import '../player/player_controller.dart';
+import '../search/search_controller.dart';
+import '../search/search_screen.dart';
+import 'playlist_card.dart';
+import 'playlists_provider.dart';
+import 'recent_list_controller.dart';
+
+const _wideBreakpoint = 720.0;
+
+class HomeScreen extends ConsumerWidget {
+  const HomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(homeDataProvider);
+    final playlistsAsync = ref.watch(playlistsProvider);
+    return Scaffold(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= _wideBreakpoint;
+          return Column(
+            children: [
+              if (isWide) const _PseudoSearchBar(),
+              Expanded(
+                child: async.when(
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (e, _) => _Empty(message: 'Failed: $e'),
+                  data: (data) {
+                    final top = topChannel(data.entries);
+                    // Treat playlists loading/error as "no playlists" — the
+                    // section only appears when we have something to show.
+                    final playlists = playlistsAsync.maybeWhen(
+                      data: (p) => p,
+                      orElse: () => const <Playlist>[],
+                    );
+                    final isEmpty = data.entries.isEmpty &&
+                        data.continueCard == null &&
+                        top == null &&
+                        playlists.isEmpty;
+                    if (isEmpty) {
+                      return _Empty(
+                        message:
+                            'Nothing here yet.\nSearch for music to get started.',
+                        actionLabel: 'Search',
+                      );
+                    }
+                    return RefreshIndicator(
+                      onRefresh: () async {
+                        ref.invalidate(homeDataProvider);
+                        ref.invalidate(playlistsProvider);
+                      },
+                      child: _HomeBody(
+                        data: data,
+                        top: top,
+                        playlists: playlists,
+                        isWide: isWide,
+                        ref: ref,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Centered pseudo searchbar on the home screen. Shows the live query from
+/// [searchInputProvider] so it mirrors what the user typed in the search
+/// dialog; tapping anywhere except the clear button opens the dialog, and
+/// the X button clears the query (same effect as the X in the real field).
+class _PseudoSearchBar extends ConsumerWidget {
+  const _PseudoSearchBar();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final query = ref.watch(searchInputProvider);
+    final hasText = query.isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Material(
+            color: theme.colorScheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(28),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(28),
+              onTap: () => openSearch(context),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 10, 6, 10),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.search,
+                      size: 22,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        hasText ? query : 'Search YouTube',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    if (hasText)
+                      InkWell(
+                        borderRadius: BorderRadius.circular(11),
+                        onTap: () {
+                          ref.read(searchInputProvider.notifier).clear();
+                          ref.read(searchQueryProvider.notifier).clear();
+                        },
+                        child: const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: Icon(Icons.close, size: 16),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeBody extends StatelessWidget {
+  const _HomeBody({
+    required this.data,
+    required this.top,
+    required this.playlists,
+    required this.isWide,
+    required this.ref,
+  });
+
+  final HomeData data;
+  final ({String uploader, List<HistoryEntry> tracks})? top;
+  final List<Playlist> playlists;
+  final bool isWide;
+  final WidgetRef ref;
+
+  @override
+  Widget build(BuildContext context) {
+    final children = <Widget>[];
+    if (data.continueCard != null) {
+      children.add(ContinueCardTile(card: data.continueCard!));
+    }
+    final topData = top;
+    if (topData != null) {
+      children.add(_TopChannelHeader(uploader: topData.uploader));
+      children.add(_GridOf(entries: topData.tracks, play: (e) {
+        ref.read(playerControllerProvider.notifier).play(_toSearchResult(e));
+      }));
+    }
+    if (data.entries.isNotEmpty) {
+      // On desktop the pseudo searchbar above already provides a search
+      // entry point — skip the inline icon to avoid a duplicate.
+      children.add(_SectionHeader(
+        'Jump back in',
+        onSearchTap: isWide ? null : () => openSearch(context),
+      ));
+      if (isWide) {
+        children.add(_GridOf(entries: data.entries, play: (e) {
+          ref.read(playerControllerProvider.notifier).play(_toSearchResult(e));
+        }));
+      } else {
+        children.add(_ListOf(entries: data.entries, play: (e) {
+          ref.read(playerControllerProvider.notifier).play(_toSearchResult(e));
+        }));
+      }
+    }
+    if (playlists.isNotEmpty) {
+      children.add(_SectionHeader('Your playlists'));
+      children.add(_PlaylistsRow(playlists: playlists));
+    }
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24, top: 4),
+      children: children,
+    );
+  }
+}
+
+/// "Because you listen to `uploader`" header for the top-channel section.
+/// Two-line title: muted "Because you listen to" plus the uploader in bold.
+class _TopChannelHeader extends StatelessWidget {
+  const _TopChannelHeader({required this.uploader});
+  final String uploader;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Because you listen to',
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            uploader,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Horizontal scroll of playlist tiles for the "Your playlists" section.
+class _PlaylistsRow extends StatelessWidget {
+  const _PlaylistsRow({required this.playlists});
+  final List<Playlist> playlists;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: PlaylistCard.coverSize + 36, // cover + name + gap
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: playlists.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        itemBuilder: (_, i) {
+          final p = playlists[i];
+          return PlaylistCard(
+            playlist: p,
+            onTap: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Playlist view coming soon')),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// Section header for the "Jump back in" list. Hosts the section title on
+/// the left and an optional search icon on the right.
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader(this.label, {this.onSearchTap});
+  final String label;
+  final VoidCallback? onSearchTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          if (onSearchTap != null)
+            IconButton(
+              tooltip: 'Search',
+              icon: const Icon(Icons.search),
+              onPressed: onSearchTap,
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+SearchResult _toSearchResult(HistoryEntry e) => SearchResult(
+      id: e.videoId,
+      title: e.title,
+      uploader: e.uploader,
+      duration: e.duration,
+      thumbnail: e.thumbnail,
+      type: 'video',
+    );
+
+class _ListOf extends StatelessWidget {
+  const _ListOf({required this.entries, required this.play});
+  final List<HistoryEntry> entries;
+  final void Function(HistoryEntry) play;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (final e in entries) ...[
+          HistoryTile(entry: e, onTap: () => play(e)),
+          const Divider(height: 1, indent: 88, endIndent: 16),
+        ],
+      ],
+    );
+  }
+}
+
+class _GridOf extends StatelessWidget {
+  const _GridOf({required this.entries, required this.play});
+  final List<HistoryEntry> entries;
+  final void Function(HistoryEntry) play;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 280,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 0.78,
+        ),
+        itemCount: entries.length,
+        itemBuilder: (_, i) {
+          final e = entries[i];
+          return HistoryGridCard(entry: e, onTap: () => play(e));
+        },
+      ),
+    );
+  }
+}
+
+class _Empty extends StatelessWidget {
+  const _Empty({required this.message, this.actionLabel});
+  final String message;
+  final String? actionLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.music_note_outlined,
+              size: 64,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+            if (actionLabel != null) ...[
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: () => openSearch(context),
+                icon: const Icon(Icons.search),
+                label: Text(actionLabel!),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}

@@ -107,22 +107,36 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
       prev,
       next,
     ) {
-      // Track id change: swap the iframe's video.
+      // Track id change: swap the iframe to the new video once audio is
+      // actually playing it. Loading the iframe while audio is still
+      // fetching the source lets the iframe drift ahead — by the time audio
+      // reaches 0 the iframe can already be at 0.5–1s due to muted autoplay
+      // in the URL.
       final prevId = prev?.track?.id;
       final nextId = next.track?.id;
-      if (nextId != null && nextId != prevId) {
-        _loadVideo(nextId);
-        // Keep .src in sync with the postMessage-based loadVideoById — some
-        // browsers / YT versions don't honor commands sent before the API is
-        // ready, so a src assignment is the belt-and-braces fallback that
-        // guarantees the iframe actually loads.
-        _iframe.src = _embedUrl(nextId);
-      }
-      // Play/pause.
       final wasPlaying = prev?.isPlaying ?? false;
       final isPlaying = next.isPlaying;
+
+      if (nextId != null && nextId != prevId && isPlaying) {
+        _loadVideo(nextId, autoplay: true);
+      } else if (nextId != null && nextId != prevId) {
+        // Track switched but not yet playing: load the iframe paused-at-0
+        // (autoplay=0 in URL) so it shows the thumbnail and doesn't race
+        // ahead. When audio finally plays we'll send playVideo + seekTo to
+        // start it cleanly.
+        _loadVideo(nextId, autoplay: false);
+      }
+
+      // Play/pause transitions.
       if (isPlaying != wasPlaying) {
         if (isPlaying) {
+          // Re-anchor the iframe onto the audio's exact current position
+          // before issuing playVideo. Without this the iframe resumes from
+          // wherever wall-clock says it should be, which can be off by
+          // hundreds of ms from where audio actually is.
+          final pos = ref.read(audioPlayerProvider).position.inMilliseconds /
+              1000.0;
+          if (pos > 0) _postSeek(pos);
           _postCommand('playVideo');
           _setPlaying(true);
         } else {
@@ -139,7 +153,7 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
     // Doing it here (instead of during build) guarantees the DOM sees a
     // populated src the moment the platform view is created.
     if (widget.videoId.isNotEmpty) {
-      _iframe.src = _embedUrl(widget.videoId);
+      _iframe.src = _embedUrl(widget.videoId, autoplay: false);
     }
   }
 
@@ -158,8 +172,10 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
   void didUpdateWidget(YouTubeEmbed old) {
     super.didUpdateWidget(old);
     if (old.videoId != widget.videoId) {
-      _loadVideo(widget.videoId);
-      _iframe.src = _embedUrl(widget.videoId);
+      // Same gating as the listener: load with the right autoplay state.
+      final isPlaying = ref.read(playerControllerProvider).isPlaying;
+      _loadVideo(widget.videoId, autoplay: isPlaying);
+      _iframe.src = _embedUrl(widget.videoId, autoplay: isPlaying);
     }
   }
 
@@ -171,10 +187,10 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
     super.dispose();
   }
 
-  // Swap the iframe to a new videoId. loadVideoById(id, 0) seeks to 0 and
-  // loads in one message, and YT buffers follow-up playVideo/pauseVideo
-  // commands until the iframe API is ready.
-  void _loadVideo(String videoId) {
+  // Swap the iframe to a new videoId. The URL embeds autoplay=1 when audio
+  // is already playing so the iframe boots in sync; autoplay=0 otherwise so
+  // it doesn't race ahead while audio is still loading.
+  void _loadVideo(String videoId, {required bool autoplay}) {
     _currentVideoId = videoId;
     // Re-assert mute on every load in case it leaked through somehow.
     _postCommand('mute');
@@ -182,21 +198,9 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
     _suppressDriftUntil = DateTime.now().add(_loadGrace);
     _anchorSecs = 0;
     _anchorWall = DateTime.now();
-    final isPlaying = ref.read(playerControllerProvider).isPlaying;
-    _setPlaying(isPlaying);
-    if (isPlaying) {
+    _setPlaying(autoplay);
+    if (autoplay) {
       _postCommand('playVideo');
-      // Defensive re-issue: the first playVideo postMessage can race ahead
-      // of the iframe API initializing and be dropped. With autoplay=1 in
-      // the URL the iframe still boots on its own, but if our state has
-      // flipped to playing we also want our manual sync command to take
-      // effect so pause-from-audio-player works immediately.
-      Future<void>.delayed(const Duration(milliseconds: 400), () {
-        if (!mounted) return;
-        if (ref.read(playerControllerProvider).isPlaying) {
-          _postCommand('playVideo');
-        }
-      });
     }
   }
 
@@ -231,12 +235,11 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
     win.postMessage(message.toJS, '*'.toJS);
   }
 
-  String _embedUrl(String id) {
+  String _embedUrl(String id, {required bool autoplay}) {
     // Standard youtube.com embed (not youtube-nocookie) so enablejsapi works.
-    // autoplay=1 with mute=1 lets the iframe start on its own — if any of our
-    // postMessages race ahead of the iframe API loading, the iframe still
-    // begins playing instead of sitting on a black frame.
-    const params = {
+    // Mute=1 always; autoplay tracks the audio state so the iframe never
+    // races ahead of a still-loading audio source.
+    final params = <String, String>{
       'enablejsapi': '1',
       'mute': '1',
       'controls': '0',
@@ -244,7 +247,7 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
       'rel': '0',
       'playsinline': '1',
       'disablekb': '1',
-      'autoplay': '1',
+      'autoplay': autoplay ? '1' : '0',
     };
     final qs = params.entries.map((e) => '${e.key}=${e.value}').join('&');
     return 'https://www.youtube.com/embed/$id?$qs';
@@ -252,15 +255,16 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
 
   @override
   Widget build(BuildContext context) {
-    // First-mount initialization. _iframe.src is shared across all instances
-    // so guard against reassigning the same URL — re-setting src on a
-    // loaded iframe can trigger a needless reload.
+    // First-mount or track-id change: seed the iframe with the right autoplay
+    // state to match audio. _iframe.src is shared across instances, so guard
+    // against re-assigning the same URL to avoid a needless iframe reload.
+    final audioPlaying = ref.read(playerControllerProvider).isPlaying;
     if (_currentVideoId == null) {
-      _loadVideo(widget.videoId);
-      _iframe.src = _embedUrl(widget.videoId);
+      _loadVideo(widget.videoId, autoplay: audioPlaying);
+      _iframe.src = _embedUrl(widget.videoId, autoplay: audioPlaying);
     } else if (_currentVideoId != widget.videoId) {
-      _loadVideo(widget.videoId);
-      _iframe.src = _embedUrl(widget.videoId);
+      _loadVideo(widget.videoId, autoplay: audioPlaying);
+      _iframe.src = _embedUrl(widget.videoId, autoplay: audioPlaying);
     }
     final isFs = widget.fullscreen;
 

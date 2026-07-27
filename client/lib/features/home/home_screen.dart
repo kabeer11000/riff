@@ -93,9 +93,10 @@ class _PseudoSearchBar extends ConsumerWidget {
     final hasText = query.isNotEmpty;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-      child: Center(
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
+          constraints: const BoxConstraints(maxWidth: 560),
           child: Material(
             color: theme.colorScheme.surfaceContainerHigh,
             borderRadius: BorderRadius.circular(28),

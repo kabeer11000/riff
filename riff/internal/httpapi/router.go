@@ -14,8 +14,8 @@ type Server struct {
 	cfg       config.Config
 	repo      store.Repository
 	ytdl      *ytdl.Client
-	cache     *cache.URLCache      // resolved googlevideo stream URLs (short TTL)
-	jsonCache *cache.JSONCache     // JSON response bodies (longer TTL)
+	cache     *cache.URLCache  // resolved googlevideo stream URLs (short TTL)
+	jsonCache *cache.JSONCache // JSON response bodies (longer TTL)
 }
 
 func NewServer(cfg config.Config, repo store.Repository, y *ytdl.Client, c *cache.URLCache, jc *cache.JSONCache) *Server {

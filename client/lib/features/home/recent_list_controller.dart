@@ -17,21 +17,18 @@ final homeDataProvider = FutureProvider.autoDispose<HomeData>((ref) async {
   return HomeData(entries: r.entries, continueCard: r.continueCard);
 });
 
-// Shared subtitle for both the list tile and the grid card.
+// Shared subtitle for both the list tile and the grid card. We intentionally
+// don't surface playCount here — the user shouldn't see how many times they've
+// rewatched something.
 String historySubtitle(HistoryEntry e) {
-  final parts = <String>[];
   final who = e.uploader.isEmpty ? 'Unknown' : e.uploader;
   if (e.isLongForm) {
-    parts.add(_humanPosition(e.lastPosition));
-  } else if (e.playCount > 1) {
-    parts.add('${e.playCount} plays');
+    return _humanPosition(e.lastPosition);
   }
   if (e.contextTitle.isNotEmpty) {
-    parts.add('From ${e.contextTitle}');
-  } else if (who.isNotEmpty) {
-    parts.add(who);
+    return 'From ${e.contextTitle}';
   }
-  return parts.isEmpty ? who : parts.join(' · ');
+  return who;
 }
 
 String _humanPosition(double secs) {
@@ -92,7 +89,7 @@ class HistoryTile extends ConsumerWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            _Thumb(url: entry.thumbnail, videoId: entry.videoId),
+            _Thumb(entry: entry),
             const SizedBox(width: 16),
             Expanded(child: _Text(entry: entry, style: _TextStyle.row)),
           ],
@@ -128,6 +125,10 @@ class HistoryGridCard extends StatelessWidget {
                   url: entry.thumbnail,
                   videoId: entry.videoId,
                   radius: 10,
+                  progress: entry.isLongForm && entry.duration > 0
+                      ? entry.lastPosition / entry.duration
+                      : null,
+                  minutesLeft: entry.isLongForm ? _humanPosition(entry.lastPosition) : null,
                 ),
               ),
             ),
@@ -173,17 +174,6 @@ class _Text extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: subtitleStyle,
         ),
-        if (entry.isLongForm && entry.duration > 0) ...[
-          const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(2),
-            child: LinearProgressIndicator(
-              value: (entry.lastPosition / entry.duration).clamp(0.0, 1.0),
-              minHeight: 3,
-              backgroundColor: theme.colorScheme.surfaceContainerHighest,
-            ),
-          ),
-        ],
       ],
     );
   }
@@ -271,43 +261,119 @@ class ContinueCardTile extends StatelessWidget {
 }
 
 class _Thumb extends StatelessWidget {
-  const _Thumb({required this.url, required this.videoId});
-  final String url;
-  final String videoId;
+  const _Thumb({required this.entry});
+  final HistoryEntry entry;
 
   @override
   Widget build(BuildContext context) {
+    final progress = entry.isLongForm && entry.duration > 0
+        ? entry.lastPosition / entry.duration
+        : null;
     return SizedBox(
       width: 56,
       child: AspectRatio(
         aspectRatio: 4 / 3,
-        child: _ThumbArt(url: url, videoId: videoId, radius: 6),
+        child: _ThumbArt(
+          url: entry.thumbnail,
+          videoId: entry.videoId,
+          radius: 6,
+          progress: progress,
+        ),
       ),
     );
   }
 }
 
 class _ThumbArt extends StatelessWidget {
-  const _ThumbArt({required this.url, required this.videoId, required this.radius});
+  const _ThumbArt({
+    required this.url,
+    required this.videoId,
+    required this.radius,
+    this.progress,
+    this.minutesLeft,
+  });
   final String url;
   final String videoId;
   final double radius;
+  final double? progress;
+  final String? minutesLeft;
 
   @override
   Widget build(BuildContext context) {
     final src = url.isEmpty ? 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg' : url;
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
-      child: Image.network(
-        src,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => Container(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: const Center(
-            child: Icon(Icons.music_note, size: 28),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.network(
+            src,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => Container(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: const Center(
+                child: Icon(Icons.music_note, size: 28),
+              ),
+            ),
           ),
-        ),
+          if (progress != null || minutesLeft != null)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _Overlay(progress: progress, minutesLeft: minutesLeft),
+            ),
+        ],
       ),
+    );
+  }
+}
+
+class _Overlay extends StatelessWidget {
+  const _Overlay({this.progress, this.minutesLeft});
+  final double? progress;
+  final String? minutesLeft;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (minutesLeft != null)
+          Align(
+            alignment: Alignment.bottomRight,
+            child: Container(
+              margin: const EdgeInsets.all(4),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                minutesLeft!,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        if (progress != null)
+          ClipRRect(
+            borderRadius: const BorderRadius.only(
+              bottomLeft: Radius.circular(10),
+              bottomRight: Radius.circular(10),
+            ),
+            child: LinearProgressIndicator(
+              value: progress!.clamp(0.0, 1.0),
+              minHeight: 3,
+              backgroundColor: Colors.transparent,
+              valueColor: AlwaysStoppedAnimation(theme.colorScheme.primary),
+            ),
+          ),
+      ],
     );
   }
 }

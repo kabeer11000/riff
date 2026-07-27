@@ -26,79 +26,132 @@ class CoverArt extends ConsumerWidget {
     final track = state.track;
     if (track == null) return const SizedBox.shrink();
     final theme = Theme.of(context);
+    final player = ref.read(audioPlayerProvider);
     return Hero(
       tag: playerCoverHeroTag(track.id),
       child: AspectRatio(
         aspectRatio: 4 / 3,
-        child: Stack(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(_coverRadius),
-              child: SizedBox.expand(
-                child: Image.network(
-                  track.thumbnail.isEmpty
-                      ? 'https://i.ytimg.com/vi/${track.id}/hqdefault.jpg'
-                      : track.thumbnail,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    child: const Center(
-                      child: Icon(Icons.music_note, size: 48),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 8,
-              bottom: 8,
-              child: GestureDetector(
-                onTap: state.isLoading
-                    ? null
-                    : () => ref
-                          .read(playerControllerProvider.notifier)
-                          .togglePlayPause(),
-                child: state.isLoading
-                    ? const SizedBox(
-                        width: 44,
-                        height: 44,
-                        child: Center(
-                          child: SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
+        child: StreamBuilder<Duration>(
+          stream: player.positionStream,
+          builder: (context, posSnap) {
+            return StreamBuilder<Duration?>(
+              stream: player.durationStream,
+              builder: (context, durSnap) {
+                final pos = posSnap.data ?? Duration.zero;
+                final dur = durSnap.data ?? Duration.zero;
+                final fraction = dur.inMilliseconds > 0
+                    ? (pos.inMilliseconds / dur.inMilliseconds).clamp(0.0, 1.0)
+                    : 0.0;
+                return Stack(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(_coverRadius),
+                      child: SizedBox.expand(
+                        child: Image.network(
+                          track.thumbnail.isEmpty
+                              ? 'https://i.ytimg.com/vi/${track.id}/hqdefault.jpg'
+                              : track.thumbnail,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => Container(
+                            color: theme.colorScheme.surfaceContainerHighest,
+                            child: const Center(
+                              child: Icon(Icons.music_note, size: 48),
                             ),
                           ),
                         ),
-                      )
-                    : Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primary,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          state.isPlaying
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                          size: 28,
-                          color: theme.colorScheme.onPrimary,
-                        ),
                       ),
-              ),
-            ),
-          ],
+                    ),
+                    Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: GestureDetector(
+                        onTap: state.isLoading
+                            ? null
+                            : () => ref
+                                  .read(playerControllerProvider.notifier)
+                                  .togglePlayPause(),
+                        child: state.isLoading
+                            ? const SizedBox(
+                                width: 44,
+                                height: 44,
+                                child: Center(
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.primary,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color:
+                                          Colors.black.withValues(alpha: 0.3),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  state.isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  size: 28,
+                                  color: theme.colorScheme.onPrimary,
+                                ),
+                              ),
+                      ),
+                    ),
+                    // YouTube-style thin progress bar across the very bottom of
+                    // the cover. The track sits above the play button's bottom
+                    // margin so they don't overlap visually.
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: _CoverProgressBar(fraction: fraction),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
         ),
+      ),
+    );
+  }
+}
+
+/// Thin progress bar pinned to the bottom of the cover image. Matches the
+/// radius of the cover so the filled portion tucks under the rounded corner.
+class _CoverProgressBar extends StatelessWidget {
+  const _CoverProgressBar({required this.fraction});
+  final double fraction;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 4,
+      child: LayoutBuilder(
+        builder: (context, c) {
+          return Stack(
+            children: [
+              Container(color: Colors.white.withValues(alpha: 0.18)),
+              FractionallySizedBox(
+                widthFactor: fraction,
+                child: Container(color: Colors.red),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -441,7 +494,18 @@ class _HorizontalScrubberState extends ConsumerState<HorizontalScrubber> {
                       ),
                     ),
                   ),
-                  Text(_fmtDuration(dur), style: timeStyle),
+                  Text(
+                    hasDur
+                        ? _fmtRemaining(
+                            Duration(
+                              milliseconds:
+                                  (dur.inMilliseconds - elapsed.inMilliseconds)
+                                      .clamp(0, dur.inMilliseconds),
+                            ),
+                          )
+                        : '--:--',
+                    style: timeStyle,
+                  ),
                 ],
               ),
             );
@@ -462,6 +526,14 @@ String _fmtDuration(Duration d) {
     return '$h:$mm:$ss';
   }
   return '$m:$ss';
+}
+
+// YouTube-style "remaining" formatter. Clamps to 0 when the value goes
+// negative (during a transient over-shoot, e.g. while scrubbing past the
+// end) so the label never shows a misleading minus-one-second value.
+String _fmtRemaining(Duration d) {
+  final clamped = d.isNegative ? Duration.zero : d;
+  return '-${_fmtDuration(clamped)}';
 }
 
 class _ProgressRingPainter extends CustomPainter {

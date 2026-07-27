@@ -65,6 +65,13 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
   // across the app lifetime even though initState may fire multiple times
   // (inline ↔ fullscreen toggle).
   static bool _factoryRegistered = false;
+  // Monotonic counter bumped on every YouTubeEmbed mount. Stored on the
+  // shared iframe element via a JS-side custom property so commands from a
+  // previous mount can detect they're stale when their State disposes mid
+  // listener-fire. Without this guard, an old embed's queued pauseVideo
+  // can race past the new embed's playVideo and leave the iframe sitting
+  // on the red thumbnail while audio keeps playing.
+  static int _mountCounter = 0;
 
   // Tracks which videoId the iframe is currently configured for.
   String? _currentVideoId;
@@ -77,11 +84,25 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
   // Subscriptions torn down in dispose.
   StreamSubscription<Duration>? _positionSub;
   ProviderSubscription<PlayerState>? _stateSub;
+  // Epoch this State was mounted under. Stored on the shared iframe element
+  // when we load a video; commands from prior mounts become no-ops once the
+  // iframe's epoch has moved on (e.g. inline → fullscreen swap).
+  late final int _mountEpoch;
+  // Flip in dispose so any in-flight async commands from this State are
+  // dropped before they reach the iframe.
+  bool _disposed = false;
 
   // Auto-hide overlay controls (YouTube-style). True = visible. The overlay
   // also stays visible while the user is scrubbing or holding a button.
   bool _controlsVisible = true;
   Timer? _hideTimer;
+
+  // Watchdog: if audio is playing but YT's iframe has dropped to the paused-
+  // on-thumbnail state (which can happen across fullscreen / theater mode
+  // toggles), the listener-driven playVideo may not land reliably. Re-issue
+  // playVideo on a short interval while audio is playing. The iframe ignores
+  // it when already playing, so the cost is one postMessage per second.
+  Timer? _playWatchdog;
 
   // Sync-rate limiting. After a fresh load or a seek we ignore drift for a
   // window — without it, position-stream transients (old values around the
@@ -102,6 +123,14 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
       );
       _factoryRegistered = true;
     }
+    // Claim ownership of the shared iframe for this State's lifetime. Any
+    // postMessage from a prior mount becomes a no-op once the iframe's epoch
+    // moves past theirs. We set the dataset up front so the very first
+    // command from this listener (or a follow-up state change) passes the
+    // gate immediately — without this, the first _postCommand would race
+    // against _loadVideo and silently drop.
+    _mountEpoch = ++_mountCounter;
+    _iframe.dataset['mountEpoch'] = _mountEpoch.toString();
 
     _stateSub = ref.listenManual<PlayerState>(playerControllerProvider, (
       prev,
@@ -139,9 +168,65 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
           if (pos > 0) _postSeek(pos);
           _postCommand('playVideo');
           _setPlaying(true);
+          // Belt and braces: re-issue playVideo after YT's API has had a
+          // moment to attach. Without this, a playVideo that races ahead of
+          // the iframe's API-ready event silently fails and the iframe sits
+          // on the thumbnail while audio plays.
+          Future<void>.delayed(const Duration(milliseconds: 600), () {
+            if (!mounted || _disposed) return;
+            if (ref.read(playerControllerProvider).isPlaying) {
+              _postCommand('playVideo');
+            }
+          });
+          // Long-running watchdog: re-assert playVideo periodically while
+          // audio is playing. Catches the case where the iframe silently
+          // drops to a paused-on-thumbnail state after a mode toggle.
+          _playWatchdog?.cancel();
+          _playWatchdog = Timer.periodic(
+            const Duration(milliseconds: 1500),
+            (_) {
+              // Use `mounted` (Flutter-disposal check) rather than just
+              // `_disposed`: a periodic Timer tick can race the disposal
+              // pipeline, and `ref` access after dispose throws.
+              if (!mounted || _disposed) {
+                _playWatchdog?.cancel();
+                return;
+              }
+              if (!ref.read(playerControllerProvider).isPlaying) {
+                _playWatchdog?.cancel();
+                return;
+              }
+              // If iframe got stuck again (silent pause), reload to the
+              // current audio time. The watchdog cost is one postMessage
+              // per second which YT happily ignores when already playing.
+              final secs = ref
+                      .read(audioPlayerProvider)
+                      .position
+                      .inMilliseconds /
+                  1000.0;
+              final expected = _expectedVideoSecs();
+              if ((secs - expected).abs() > 2.0) {
+                final track = ref.read(playerControllerProvider).track;
+                if (track != null) {
+                  _postCommand('mute');
+                  _postCommand('loadVideoById', [
+                    track.id,
+                    secs,
+                    'default',
+                  ]);
+                  _suppressDriftUntil = DateTime.now().add(_loadGrace);
+                  _anchorSecs = secs;
+                  _anchorWall = DateTime.now();
+                  _postCommand('playVideo');
+                }
+              }
+            },
+          );
         } else {
           _postCommand('pauseVideo');
           _setPlaying(false);
+          _playWatchdog?.cancel();
+          _playWatchdog = null;
         }
       }
     }, fireImmediately: true);
@@ -149,11 +234,17 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
     final audioPlayer = ref.read(audioPlayerProvider);
     _positionSub = audioPlayer.positionStream.listen(_onAudioPosition);
 
-    // Seed the iframe src up front, before any HtmlElementView is mounted.
-    // Doing it here (instead of during build) guarantees the DOM sees a
-    // populated src the moment the platform view is created.
+    // Seed the iframe src up front so the DOM element always has a YT URL
+    // from the very first frame. Without this the iframe's src stays empty
+    // (since _loadVideo runs from the listener but doesn't rewrite src,
+    // and the build-time src write is suppressed once _currentVideoId is
+    // set) and YT never loads — leaving the iframe blank/white.
+    // Use autoplay=audioPlaying so the URL matches the play state we'll
+    // subsequently issue commands for.
     if (widget.videoId.isNotEmpty) {
-      _iframe.src = _embedUrl(widget.videoId, autoplay: false);
+      final audioPlaying = ref.read(playerControllerProvider).isPlaying;
+      final desired = _embedUrl(widget.videoId, autoplay: audioPlaying);
+      if (_iframe.src != desired) _iframe.src = desired;
     }
   }
 
@@ -181,7 +272,11 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
 
   @override
   void dispose() {
+    // Flip first so any synchronous listener fires between here and
+    // super.dispose() are dropped by _postCommand.
+    _disposed = true;
     _hideTimer?.cancel();
+    _playWatchdog?.cancel();
     _positionSub?.cancel();
     _stateSub?.close();
     super.dispose();
@@ -192,7 +287,28 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
   // it doesn't race ahead while audio is still loading.
   void _loadVideo(String videoId, {required bool autoplay}) {
     _currentVideoId = videoId;
-    // Re-assert mute on every load in case it leaked through somehow.
+    _iframe.dataset['mountEpoch'] = _mountEpoch.toString();
+    // Same videoId → reload cleanly. A mode toggle (fullscreen / theater /
+    // cover) rebuilds the widget tree; relying on stale JS state on the
+    // shared iframe across mounts leaves it stuck on the thumbnail or in a
+    // blank-buffering state. A loadVideoById with the current play time as
+    // the start second guarantees YT is in the right state from the
+    // iframe's point of view.
+    if (_iframe.src.contains('/embed/$videoId?')) {
+      final pos = ref.read(audioPlayerProvider).position.inMilliseconds /
+          1000.0;
+      final startAt = pos > 0 ? pos : 0.0;
+      _postCommand('mute');
+      _postCommand('loadVideoById', [videoId, startAt, 'default']);
+      _suppressDriftUntil = DateTime.now().add(_loadGrace);
+      _anchorSecs = startAt;
+      _anchorWall = DateTime.now();
+      _setPlaying(autoplay);
+      if (autoplay) _postCommand('playVideo');
+      return;
+    }
+
+    // Different video, or first ever load: full sequence.
     _postCommand('mute');
     _postCommand('loadVideoById', [videoId, 0, 'default']);
     _suppressDriftUntil = DateTime.now().add(_loadGrace);
@@ -201,6 +317,16 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
     _setPlaying(autoplay);
     if (autoplay) {
       _postCommand('playVideo');
+      // Defensive re-issue after YT finishes loading. Drop the postMessage
+      // earlier than YT processes it and the playVideo silently fails, the
+      // iframe sits at the thumbnail with audio already playing. A delayed
+      // follow-up gives YT's API time to attach.
+      Future<void>.delayed(const Duration(milliseconds: 600), () {
+        if (_disposed) return;
+        if (ref.read(playerControllerProvider).isPlaying) {
+          _postCommand('playVideo');
+        }
+      });
     }
   }
 
@@ -227,8 +353,15 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
   }
 
   void _postCommand(String func, [List<Object>? args]) {
+    if (_disposed) return;
     final win = _iframe.contentWindow;
     if (win == null) return;
+    // Drop stale commands from a previous mount. When theater ↔ fullscreen
+    // swaps create a new YouTubeEmbed, this State is being replaced; a
+    // still-queued pauseVideo from the old listener must not land after
+    // the new mount's playVideo.
+    final stored = _iframe.dataset['mountEpoch'];
+    if (stored == null || stored != _mountEpoch.toString()) return;
     final message = args == null
         ? '{"event":"command","func":"$func"}'
         : '{"event":"command","func":"$func","args":${jsonEncode(args)}}';
@@ -256,15 +389,17 @@ class _YouTubeEmbedState extends ConsumerState<YouTubeEmbed> {
   @override
   Widget build(BuildContext context) {
     // First-mount or track-id change: seed the iframe with the right autoplay
-    // state to match audio. _iframe.src is shared across instances, so guard
-    // against re-assigning the same URL to avoid a needless iframe reload.
+    // state to match audio. _iframe.src is shared across instances — guard
+    // against re-writing it (which would reload the iframe and discard any
+    // in-flight JS state from the previous mount).
     final audioPlaying = ref.read(playerControllerProvider).isPlaying;
+    final desiredSrc = _embedUrl(widget.videoId, autoplay: audioPlaying);
     if (_currentVideoId == null) {
       _loadVideo(widget.videoId, autoplay: audioPlaying);
-      _iframe.src = _embedUrl(widget.videoId, autoplay: audioPlaying);
+      if (_iframe.src != desiredSrc) _iframe.src = desiredSrc;
     } else if (_currentVideoId != widget.videoId) {
       _loadVideo(widget.videoId, autoplay: audioPlaying);
-      _iframe.src = _embedUrl(widget.videoId, autoplay: audioPlaying);
+      if (_iframe.src != desiredSrc) _iframe.src = desiredSrc;
     }
     final isFs = widget.fullscreen;
 

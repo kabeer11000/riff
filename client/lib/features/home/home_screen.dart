@@ -26,7 +26,13 @@ class HomeScreen extends ConsumerWidget {
           final isWide = constraints.maxWidth >= _wideBreakpoint;
           return Column(
             children: [
-              if (isWide) const _PseudoSearchBar(),
+              if (isWide)
+                const _PseudoSearchBar()
+              else
+                // Narrow screens: the only search entry point is a top-right
+                // icon, sized and padded to sit flush with subsequent section
+                // headers regardless of which sections render below.
+                const _NarrowSearchRow(),
               Expanded(
                 child: async.when(
                   loading: () => const Center(child: CircularProgressIndicator()),
@@ -59,7 +65,6 @@ class HomeScreen extends ConsumerWidget {
                         data: data,
                         top: top,
                         playlists: playlists,
-                        isWide: isWide,
                         ref: ref,
                       ),
                     );
@@ -141,19 +146,42 @@ class _PseudoSearchBar extends ConsumerWidget {
   }
 }
 
+/// Top-of-page search affordance for narrow layouts. Renders a Row with the
+/// same horizontal padding, vertical padding, and label-area height as a
+/// `_SectionHeader`, so the icon's vertical center lines up with the first
+/// section title below regardless of which sections are present.
+class _NarrowSearchRow extends StatelessWidget {
+  const _NarrowSearchRow();
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Expanded(child: SizedBox.shrink()),
+          IconButton(
+            tooltip: 'Search',
+            icon: const Icon(Icons.search),
+            onPressed: () => openSearch(context),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _HomeBody extends StatelessWidget {
   const _HomeBody({
     required this.data,
     required this.top,
     required this.playlists,
-    required this.isWide,
     required this.ref,
   });
 
   final HomeData data;
   final ({String uploader, List<HistoryEntry> tracks})? top;
   final List<Playlist> playlists;
-  final bool isWide;
   final WidgetRef ref;
 
   @override
@@ -170,24 +198,15 @@ class _HomeBody extends StatelessWidget {
       }));
     }
     if (data.entries.isNotEmpty) {
-      // On desktop the pseudo searchbar above already provides a search
-      // entry point — skip the inline icon to avoid a duplicate.
-      children.add(_SectionHeader(
-        'Jump back in',
-        onSearchTap: isWide ? null : () => openSearch(context),
-      ));
-      if (isWide) {
-        children.add(_GridOf(entries: data.entries, play: (e) {
-          ref.read(playerControllerProvider.notifier).play(_toSearchResult(e));
-        }));
-      } else {
-        children.add(_ListOf(entries: data.entries, play: (e) {
-          ref.read(playerControllerProvider.notifier).play(_toSearchResult(e));
-        }));
-      }
+      // Search icon now lives in the top-level row above the body, so this
+      // section header is purely a title — no trailing action needed.
+      children.add(const _SectionHeader('Jump back in'));
+      children.add(_ListOf(entries: data.entries, play: (e) {
+        ref.read(playerControllerProvider.notifier).play(_toSearchResult(e));
+      }));
     }
     if (playlists.isNotEmpty) {
-      children.add(_SectionHeader('Your playlists'));
+      children.add(const _SectionHeader('Your playlists'));
       children.add(_PlaylistsRow(playlists: playlists));
     }
     return ListView(
@@ -263,36 +282,22 @@ class _PlaylistsRow extends StatelessWidget {
   }
 }
 
-/// Section header for the "Jump back in" list. Hosts the section title on
-/// the left and an optional search icon on the right.
+/// Plain section header — title only. Search icons live in the top header
+/// row now, so this stays trivial.
 class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.label, {this.onSearchTap});
+  const _SectionHeader(this.label);
   final String label;
-  final VoidCallback? onSearchTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          if (onSearchTap != null)
-            IconButton(
-              tooltip: 'Search',
-              icon: const Icon(Icons.search),
-              onPressed: onSearchTap,
-            ),
-        ],
+      child: Text(
+        label,
+        style: theme.textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

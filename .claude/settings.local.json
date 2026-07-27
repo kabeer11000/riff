@@ -47,7 +47,9 @@
       "Bash(go doc *)",
       "Bash(go run *)",
       "Bash(nohup ./riff-server)",
-      "Bash(disown sleep *)"
+      "Bash(disown sleep *)",
+      "Bash(YTDLP_PATH=\"$\\(pwd\\)/yt-dlp/yt-dlp.exe\" nohup ./riff-server)",
+      "Bash(YTDLP_PATH=\"$\\(pwd\\)/yt-dlp/yt-dlp.exe\" ./yt-dlp/yt-dlp.exe --skip-download -j -- \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\")"
     ]
   }
 }

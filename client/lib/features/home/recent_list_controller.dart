@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../api/endpoints/history.dart';
 import '../../api/models/continue_card.dart';
 import '../../api/models/history_entry.dart';
+import '../player/now_playing_indicator.dart';
 
 class HomeData {
   const HomeData({required this.entries, required this.continueCard});
@@ -92,6 +93,9 @@ class HistoryTile extends ConsumerWidget {
             _Thumb(entry: entry),
             const SizedBox(width: 16),
             Expanded(child: _Text(entry: entry, style: _TextStyle.row)),
+            // Trailing equalizer when this is the playing track.
+            const SizedBox(width: 8),
+            NowPlayingIndicator(trackId: entry.videoId, size: 16),
           ],
         ),
       ),
@@ -323,6 +327,18 @@ class _ThumbArt extends StatelessWidget {
               bottom: 0,
               child: _Overlay(progress: progress, minutesLeft: minutesLeft),
             ),
+          // Equalizer glyph on the cover when this track is the current
+          // track. Self-checks via playerControllerProvider; no-op for
+          // other tracks so the cost is one widget per tile.
+          Positioned(
+            left: 6,
+            bottom: 6,
+            child: NowPlayingIndicator(
+              trackId: videoId,
+              size: 16,
+              color: Colors.white,
+            ),
+          ),
         ],
       ),
     );

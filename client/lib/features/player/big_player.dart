@@ -12,6 +12,112 @@ import 'youtube_embed.dart';
 
 const _marqueeDuration = Duration(seconds: 8);
 
+/// Spotify-style "About the channel" card. Round avatar (initial fallback —
+/// yt-dlp doesn't surface a channel photo on video lookups), channel name,
+/// dimmed subtitle, and a follow button. The follow action is a no-op for
+/// now; the visual is what we want first.
+class _ChannelSection extends ConsumerWidget {
+  const _ChannelSection({this.padding = const EdgeInsets.symmetric(horizontal: 16)});
+
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(playerControllerProvider);
+    final uploader = state.track?.uploader ?? '';
+    if (uploader.isEmpty) return const SizedBox.shrink();
+    final theme = Theme.of(context);
+    final initial = uploader.characters.first.toUpperCase();
+    // Stable color per channel so the same uploader always gets the same
+    // tile background across plays.
+    final seed = uploader.codeUnits.fold<int>(0, (a, c) => a + c);
+    final avatarColors = [
+      theme.colorScheme.primaryContainer,
+      theme.colorScheme.secondaryContainer,
+      theme.colorScheme.tertiaryContainer,
+    ];
+    final avatarColor = avatarColors[seed % avatarColors.length];
+    final onAvatar = theme.colorScheme.onPrimaryContainer;
+    return Padding(
+      padding: padding,
+      child: Material(
+        color: theme.colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+          child: Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: avatarColor,
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  initial,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: onAvatar,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      uploader,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'YouTube channel',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // No-op for now; just the affordance.
+              TextButton(
+                onPressed: () {},
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                    side: BorderSide(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                    ),
+                  ),
+                ),
+                child: Text(
+                  'Follow',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Single dimmed line showing whatever optional metadata we have for the
 /// current track. Joins available fields with ` • `. Returns nothing when no
 /// metadata is available so the description below has the space to itself.
@@ -238,68 +344,84 @@ class BigPlayer extends ConsumerWidget {
                 const SizedBox(width: 48),
               ],
             ),
-            const SizedBox(height: 8),
-            if (kIsWeb) ...[
-              const Center(child: CoverVideoToggle()),
-              const SizedBox(height: 12),
-            ],
-            // When fullscreen is on the embed has migrated to the overlay;
-            // render only the cover here so we don't double-mount the iframe.
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: kIsWeb &&
-                      ref.watch(videoTabEnabledProvider) &&
-                      !isFullscreen
-                  ? YouTubeEmbed(videoId: track.id)
-                  : const CoverArt(),
-            ),
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _Marquee(
-                text: track.title,
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Track: ${track.title}')),
+            // Body scrolls so the description expansion / channel card never
+            // pushes content off-screen on small viewports. The Draggable
+            // ScrollableSheet passes us its scrollController so the drag
+            // gesture and the scroll share the same axis.
+            Expanded(
+              child: SingleChildScrollView(
+                controller: scrollController,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 8),
+                    if (kIsWeb) ...[
+                      const Center(child: CoverVideoToggle()),
+                      const SizedBox(height: 12),
+                    ],
+                    // When fullscreen is on the embed has migrated to the
+                    // overlay; render only the cover here so we don't
+                    // double-mount the iframe.
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: kIsWeb &&
+                              ref.watch(videoTabEnabledProvider) &&
+                              !isFullscreen
+                          ? YouTubeEmbed(videoId: track.id)
+                          : const CoverArt(),
+                    ),
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _Marquee(
+                        text: track.title,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Track: ${track.title}')),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: InkWell(
+                        onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Artist: ${track.uploader}')),
+                        ),
+                        child: Text(
+                          track.uploader.isEmpty ? 'Unknown' : track.uploader,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.left,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    _TrackMetaLine(
+                      artist: state.artist,
+                      album: state.album,
+                      releaseYear: state.releaseYear,
+                      viewCount: state.viewCount,
+                    ),
+                    const SizedBox(height: 24),
+                    kIsWeb && ref.watch(videoTabEnabledProvider)
+                        ? const SizedBox.shrink()
+                        : const Center(child: MusicDisk()),
+                    const SizedBox(height: 24),
+                    ExpandableDescription(description: state.description),
+                    const SizedBox(height: 24),
+                    const _ChannelSection(),
+                    const SizedBox(height: 32),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 4),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: InkWell(
-                onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Artist: ${track.uploader}')),
-                ),
-                child: Text(
-                  track.uploader.isEmpty ? 'Unknown' : track.uploader,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.left,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 6),
-            _TrackMetaLine(
-              artist: state.artist,
-              album: state.album,
-              releaseYear: state.releaseYear,
-              viewCount: state.viewCount,
-            ),
-            const SizedBox(height: 12),
-            ExpandableDescription(description: state.description),
-            const SizedBox(height: 32),
-            kIsWeb && ref.watch(videoTabEnabledProvider)
-                ? const SizedBox.shrink()
-                : const Center(child: MusicDisk()),
-            const Spacer(),
-            const SizedBox(height: 32),
           ],
         ),
       ),
@@ -350,11 +472,10 @@ class BigPlayerSidebar extends ConsumerWidget {
         right: false,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-          // Non-scrolling scroll view: in theater mode the wide video makes
-          // the column taller than the viewport; this clips the overflow
-          // (cutting the disk) instead of throwing a RenderFlex overflow.
+          // The sidebar column can outgrow the viewport in theater mode
+          // (wide video + desc + meta). Scrollable so the user can reach
+          // the description card at the bottom.
           child: SingleChildScrollView(
-            physics: const NeverScrollableScrollPhysics(),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -411,15 +532,20 @@ class BigPlayerSidebar extends ConsumerWidget {
                   viewCount: state.viewCount,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
+                kIsWeb && ref.watch(videoTabEnabledProvider)
+                    ? const SizedBox.shrink()
+                    : const Center(child: MusicDisk()),
+                const SizedBox(height: 16),
                 ExpandableDescription(
                   description: state.description,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
+                const SizedBox(height: 16),
+                const _ChannelSection(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                ),
                 const SizedBox(height: 32),
-                kIsWeb && ref.watch(videoTabEnabledProvider)
-                    ? const SizedBox.shrink()
-                    : const Center(child: MusicDisk()),
               ],
             ),
           ),

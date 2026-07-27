@@ -187,14 +187,12 @@ class _HomeShell extends ConsumerWidget {
 class _Panel extends StatelessWidget {
   const _Panel({
     required this.child,
-    this.leftGap = 0,
     this.rightGap = 0,
     this.topGap = 0,
     this.bottomGap = 0,
   });
 
   final Widget child;
-  final double leftGap;
   final double rightGap;
   final double topGap;
   final double bottomGap;
@@ -202,7 +200,7 @@ class _Panel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(leftGap, topGap, rightGap, bottomGap),
+      padding: EdgeInsets.fromLTRB(0, topGap, rightGap, bottomGap),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(_panelRadius),
         child: child,

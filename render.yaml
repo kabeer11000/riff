@@ -6,10 +6,14 @@ services:
     runtime: docker
     rootDir: riff
     dockerfilePath: ./Dockerfile
-    plan: free
+    plan: starter
     region: singapore
     healthCheckPath: /health
     autoDeploy: true
+    disk:
+      name: riff-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: PORT
         value: "8080"
@@ -22,7 +26,7 @@ services:
       - key: YTDLP_PATH
         value: /usr/local/bin/yt-dlp
       - key: YTDLP_COOKIES_FILE
-        value: /etc/secrets/yt-cookies.txt
+        value: /data/yt-cookies.txt
       - key: PROXY_LIST_URL
         value: https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.json
       - key: REDIS_URL

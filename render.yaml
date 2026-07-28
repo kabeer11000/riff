@@ -24,6 +24,6 @@ services:
       - key: YTDLP_COOKIES_FILE
         value: /etc/secrets/yt-cookies.txt
       - key: PROXY_LIST_URL
-        value: https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt
+        value: proxylists/proxifly-proxies.json
       - key: REDIS_URL
         sync: false

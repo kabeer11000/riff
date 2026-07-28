@@ -1,18 +1,19 @@
 package proxy
 
 import (
-	"bufio"
 	"context"
-	"fmt"
+	"encoding/json"
 	"log/slog"
-	"net/http"
-	"strings"
+	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
-const defaultListURL = "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"
+// Default path is relative to the working directory; the binary runs from
+// riff/ in dev and from /app in the Docker image (see Dockerfile).
+const defaultProxyFile = "proxylists/proxifly-proxies.json"
 
 const (
 	// After Next() hands a proxy out, the pool won't hand the same one out
@@ -23,18 +24,24 @@ const (
 	// MarkFailed() drops a proxy from rotation for this long.
 	failCooldown = 10 * time.Minute
 
-	// How often to re-fetch the list in the background.
+	// How often to re-read the file in the background. Cheap; no network.
 	refreshInterval = 15 * time.Minute
-
-	// How long the initial fetch is allowed to take before we give up.
-	fetchTimeout = 30 * time.Second
 )
 
-// Pool rotates through a SOCKS5 proxy list. Callers pull the next proxy via
-// Next(); the pool skips anything in its cooldown window (recently used or
-// recently failed). The list refreshes in the background.
+// proxyEntry is the subset of the proxifly JSON shape we read. We could
+// consume the full object but we only need protocol+ip+port to build the URL
+// yt-dlp expects.
+type proxyEntry struct {
+	Protocol string `json:"protocol"`
+	IP       string `json:"ip"`
+	Port     int    `json:"port"`
+}
+
+// Pool rotates through a proxy list. Callers pull the next proxy via Next();
+// the pool skips anything in its cooldown window (recently used or recently
+// failed). The list is reloaded from disk on a background ticker.
 type Pool struct {
-	url string
+	path string
 
 	mu      sync.RWMutex
 	proxies []string
@@ -43,25 +50,23 @@ type Pool struct {
 	cooldown sync.Map // proxy string -> time.Time when cooldown expires
 }
 
-func NewPool(url string) *Pool {
-	if url == "" {
-		url = defaultListURL
+func NewPool(path string) *Pool {
+	if path == "" {
+		path = defaultProxyFile
 	}
-	p := &Pool{url: url}
-	ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-	defer cancel()
-	if err := p.Refresh(ctx); err != nil {
-		slog.Warn("proxy: initial fetch failed", "err", err)
+	p := &Pool{path: path}
+	if err := p.Refresh(context.Background()); err != nil {
+		slog.Warn("proxy: initial load failed", "err", err, "path", path)
 	} else {
-		slog.Info("proxy: ready", "url", url)
+		slog.Info("proxy: ready", "path", path)
 	}
 	go p.loop()
 	return p
 }
 
-// Next returns a SOCKS5 URL like "socks5://1.2.3.4:1080", or "" if the pool
-// is empty or every proxy is cooling down. Returning "" lets the caller
-// fall back to a direct connection rather than failing.
+// Next returns a URL like "socks5://1.2.3.4:1080" or "http://1.2.3.4:8080",
+// or "" if the pool is empty or every proxy is cooling down. Returning ""
+// lets the caller fall back to a direct connection rather than failing.
 func (p *Pool) Next() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -91,35 +96,27 @@ func (p *Pool) MarkFailed(proxy string) {
 	p.cooldown.Store(proxy, time.Now().Add(failCooldown))
 }
 
-// Refresh reloads the proxy list. Each non-empty, non-comment line is one
-// proxy in `ip:port` form; we prefix with the SOCKS5 scheme.
+// Refresh reloads proxies from the JSON file on disk. Each entry's protocol
+// becomes the URL scheme (http / socks4 / socks5); ip:port is appended.
+// Entries missing any required field are skipped.
 func (p *Pool) Refresh(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.url, nil)
+	data, err := os.ReadFile(p.path)
 	if err != nil {
 		return err
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
+	var entries []proxyEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status %d", resp.StatusCode)
-	}
-	var proxies []string
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+	proxies := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.Protocol != "socks5" || e.IP == "" || e.Port <= 0 {
 			continue
 		}
-		proxies = append(proxies, "socks5://"+line)
-	}
-	if err := scanner.Err(); err != nil {
-		return err
+		proxies = append(proxies, e.Protocol+"://"+e.IP+":"+strconv.Itoa(e.Port))
 	}
 	if len(proxies) == 0 {
-		return fmt.Errorf("list empty")
+		return errEmpty{path: p.path}
 	}
 	p.mu.Lock()
 	p.proxies = proxies
@@ -132,11 +129,9 @@ func (p *Pool) loop() {
 	ticker := time.NewTicker(refreshInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		ctx, cancel := context.WithTimeout(context.Background(), fetchTimeout)
-		if err := p.Refresh(ctx); err != nil {
+		if err := p.Refresh(context.Background()); err != nil {
 			slog.Warn("proxy: refresh failed", "err", err)
 		}
-		cancel()
 	}
 }
 
@@ -152,3 +147,7 @@ func (p *Pool) isCoolingDown(proxy string, now time.Time) bool {
 	}
 	return true
 }
+
+type errEmpty struct{ path string }
+
+func (e errEmpty) Error() string { return "proxy: list empty (" + e.path + ")" }

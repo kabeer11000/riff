@@ -30,13 +30,16 @@ FROM python:3.12-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates wget ffmpeg \
- && pip install --no-cache-dir --break-system-packages yt-dlp \
+ && update-ca-certificates \
+ && pip install --no-cache-dir --break-system-packages --upgrade certifi yt-dlp \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /out/riff-server /usr/local/bin/riff-server
+COPY --from=builder /src/proxylists /proxylists
 RUN useradd --system --uid 1000 --shell /usr/sbin/nologin --no-create-home riff
 USER riff
 ENV PORT=8080 \
     YTDLP_PATH=/usr/local/bin/yt-dlp \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 EXPOSE 8080

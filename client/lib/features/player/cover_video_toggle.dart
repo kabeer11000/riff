@@ -2,12 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'player_controller.dart';
 import 'video_tab_provider.dart';
 
 /// Pill switching the big player's main slot between cover art, the YouTube
-/// embed, and the queue. The Video segment is web-only AND requires the
-/// current item to have a YouTube source — non-streamable items hide it.
+/// embed, and the queue. The Video segment is web-only — non-streamable
+/// items (no YouTube source) leave the embed empty.
 class CoverVideoToggle extends ConsumerWidget {
   const CoverVideoToggle({super.key});
 
@@ -15,9 +14,6 @@ class CoverVideoToggle extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final tab = ref.watch(playerTabProvider);
-    final hasYoutube = ref.watch(
-      playerControllerProvider.select((s) => s.item?.hasYoutube ?? false),
-    );
     void select(PlayerTab t) => ref.read(playerTabProvider.notifier).set(t);
     return Container(
       padding: const EdgeInsets.all(3),
@@ -33,7 +29,7 @@ class CoverVideoToggle extends ConsumerWidget {
             selected: tab == PlayerTab.cover,
             onTap: () => select(PlayerTab.cover),
           ),
-          if (kIsWeb && hasYoutube)
+          if (kIsWeb)
             _Segment(
               label: 'Video',
               selected: tab == PlayerTab.video,

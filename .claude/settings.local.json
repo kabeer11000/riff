@@ -68,7 +68,8 @@
       "Bash(dart format *)",
       "Read(//e/e/Software/**)",
       "Read(//e/e/Software/riff/riff/**)",
-      "Bash(render --version)"
+      "Bash(render --version)",
+      "WebSearch"
     ]
   }
 }

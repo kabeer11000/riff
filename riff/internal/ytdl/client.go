@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/wader/goutubedl"
+
+	"riff/m/internal/proxy"
 )
 
 // Client wraps goutubedl (which shells out to yt-dlp/youtube-dl). It exposes
@@ -16,14 +18,15 @@ import (
 // Higher-level metadata (artist, album, thumbnail) is read from the raw Info
 // struct by the provider layer.
 type Client struct {
-	cookiesFile string // empty = no cookies
+	cookiesFile string      // empty = no cookies
+	pool        *proxy.Pool // nil = no proxy rotation
 }
 
-func New(binPath, cookiesFile string) *Client {
+func New(binPath, cookiesFile string, pool *proxy.Pool) *Client {
 	if binPath != "" {
 		goutubedl.Path = binPath
 	}
-	return &Client{cookiesFile: cookiesFile}
+	return &Client{cookiesFile: cookiesFile, pool: pool}
 }
 
 // ytOptions returns the goutubedl options configured for this client. Callers
@@ -31,11 +34,17 @@ func New(binPath, cookiesFile string) *Client {
 // authentication, which is fine for some sites but YouTube will block it.
 func (c *Client) ytOptions(modify ...func(*goutubedl.Options)) goutubedl.Options {
 	o := goutubedl.Options{Cookies: c.cookiesFile}
+	if c.pool != nil {
+		o.ProxyUrl = c.pool.Next()
+	}
 	for _, m := range modify {
 		m(&o)
 	}
 	return o
 }
+
+// Pool exposes the proxy pool so callers can MarkFailed() on network errors.
+func (c *Client) Pool() *proxy.Pool { return c.pool }
 
 const watchURLFmt = "https://www.youtube.com/watch?v=%s"
 

@@ -14,6 +14,7 @@ import (
 	"riff/m/internal/httpapi"
 	"riff/m/internal/index"
 	"riff/m/internal/provider"
+	"riff/m/internal/proxy"
 	"riff/m/internal/store"
 	"riff/m/internal/ytdl"
 )
@@ -34,7 +35,11 @@ func main() {
 	jsonCache := cache.NewJSON()
 	defer jsonCache.Close()
 
-	y := ytdl.New(cfg.YTDLPPath, cfg.YTDLPCookiesFile)
+	var proxyPool *proxy.Pool
+	if cfg.ProxyListURL != "" {
+		proxyPool = proxy.NewPool(cfg.ProxyListURL)
+	}
+	y := ytdl.New(cfg.YTDLPPath, cfg.YTDLPCookiesFile, proxyPool)
 	regs := &provider.Registry{Providers: []provider.Provider{provider.NewYouTube(y)}}
 	ix := index.New(repo)
 

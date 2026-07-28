@@ -13,6 +13,7 @@ type Config struct {
 	TursoToken       string        // libSQL auth token
 	YTDLPPath        string        // path to yt-dlp/youtube-dl binary; empty = look up on PATH
 	YTDLPCookiesFile string        // path to Netscape cookies.txt; empty = no cookies
+	ProxyListURL     string        // SOCKS5 proxy list URL; empty disables proxy rotation
 
 	CacheMaxTTL      time.Duration // ceiling for cached resolved stream URLs (googlevideo)
 	CacheMetadataTTL time.Duration // metadata responses (tracks, channels, external playlists) — stable
@@ -28,6 +29,7 @@ func Load() Config {
 		TursoToken:       env("TURSO_AUTH_TOKEN", ""),
 		YTDLPPath:        env("YTDLP_PATH", ""),
 		YTDLPCookiesFile: env("YTDLP_COOKIES_FILE", ""),
+		ProxyListURL:     env("PROXY_LIST_URL", "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"),
 		CacheMaxTTL:      envDuration("CACHE_MAX_TTL", 5*time.Minute),
 		CacheMetadataTTL: envDuration("CACHE_METADATA_TTL", time.Hour),
 		CacheSearchTTL:   envDuration("CACHE_SEARCH_TTL", 5*time.Minute),

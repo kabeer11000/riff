@@ -21,9 +21,10 @@ type Turso struct {
 }
 
 // OpenTurso dials libsql://url with ?authToken=token, applies the schema, and
-// returns a Repository. SetMaxOpenConns(1) — libsql HTTP transport serializes
-// writes safely per connection; capping avoids lock contention the same way
-// modernc/sqlite did.
+// returns a Repository. The pool is sized for a remote HTTP transport: a small
+// fan-out for read parallelism, a short idle timeout so Render's NAT
+// idle-kills don't leave a stale connection behind, and a lifetime cap to
+// recycle long-running connections.
 func OpenTurso(dbURL, authToken string) (*Turso, error) {
 	dsn := dbURL
 	if authToken != "" {
@@ -33,7 +34,10 @@ func OpenTurso(dbURL, authToken string) (*Turso, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
+	db.SetConnMaxIdleTime(2 * time.Minute)
+	db.SetConnMaxLifetime(30 * time.Minute)
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, err

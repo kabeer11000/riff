@@ -29,7 +29,7 @@ func Load() Config {
 		TursoToken:       env("TURSO_AUTH_TOKEN", ""),
 		YTDLPPath:        env("YTDLP_PATH", ""),
 		YTDLPCookiesFile: env("YTDLP_COOKIES_FILE", ""),
-		ProxyListURL:     env("PROXY_LIST_URL", "proxylists/proxifly-proxies.json"),
+		ProxyListURL:     env("PROXY_LIST_URL", "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.json"),
 		CacheMaxTTL:      envDuration("CACHE_MAX_TTL", 5*time.Minute),
 		CacheMetadataTTL: envDuration("CACHE_METADATA_TTL", time.Hour),
 		CacheSearchTTL:   envDuration("CACHE_SEARCH_TTL", 5*time.Minute),

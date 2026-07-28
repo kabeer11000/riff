@@ -3,17 +3,24 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log/slog"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/net/proxy"
 )
 
-// Default path is relative to the working directory; the binary runs from
-// riff/ in dev and from /app in the Docker image (see Dockerfile).
-const defaultProxyFile = "proxylists/proxifly-proxies.json"
+// Default URL is the proxifly SOCKS5 list — refreshed every 15 min.
+const defaultProxyURL = "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.json"
 
 const (
 	// After Next() hands a proxy out, the pool won't hand the same one out
@@ -24,14 +31,27 @@ const (
 	// MarkFailed() drops a proxy from rotation for this long.
 	failCooldown = 10 * time.Minute
 
-	// How often to re-read the file in the background. Cheap; no network.
+	// How often to re-read the source in the background.
 	refreshInterval = 15 * time.Minute
+
+	// HTTP fetch timeout for URL sources.
+	fetchTimeout = 30 * time.Second
+
+	// Per-proxy health check timeout. Short — we just need to know if the
+	// proxy can reach YouTube. Anything slower is dead.
+	probeTimeout = 5 * time.Second
+
+	// Parallel probe workers. Cap to avoid swamping the network.
+	probeConcurrency = 50
+
+	// What we HEAD through each proxy to verify it's alive and can reach YT.
+	probeTarget = "https://www.youtube.com/robots.txt"
 )
 
-// proxyEntry is the subset of the proxifly JSON shape we read. We could
-// consume the full object but we only need protocol+ip+port to build the URL
-// yt-dlp expects.
+// proxyEntry accepts both shapes: proxifly's data.json (full `proxy` URL
+// already) and the local file (protocol+ip+port only).
 type proxyEntry struct {
+	Proxy    string `json:"proxy,omitempty"`
 	Protocol string `json:"protocol"`
 	IP       string `json:"ip"`
 	Port     int    `json:"port"`
@@ -52,7 +72,7 @@ type Pool struct {
 
 func NewPool(path string) *Pool {
 	if path == "" {
-		path = defaultProxyFile
+		path = defaultProxyURL
 	}
 	p := &Pool{path: path}
 	if err := p.Refresh(context.Background()); err != nil {
@@ -96,11 +116,17 @@ func (p *Pool) MarkFailed(proxy string) {
 	p.cooldown.Store(proxy, time.Now().Add(failCooldown))
 }
 
-// Refresh reloads proxies from the JSON file on disk. Each entry's protocol
-// becomes the URL scheme (http / socks4 / socks5); ip:port is appended.
-// Entries missing any required field are skipped.
+// Refresh reloads proxies from the source (file path or HTTP/HTTPS URL).
+// Each entry's protocol becomes the URL scheme (socks5 today); entries
+// missing required fields are skipped.
 func (p *Pool) Refresh(ctx context.Context) error {
-	data, err := os.ReadFile(p.path)
+	var data []byte
+	var err error
+	if isURL(p.path) {
+		data, err = fetchURL(ctx, p.path)
+	} else {
+		data, err = os.ReadFile(p.path)
+	}
 	if err != nil {
 		return err
 	}
@@ -110,6 +136,10 @@ func (p *Pool) Refresh(ctx context.Context) error {
 	}
 	proxies := make([]string, 0, len(entries))
 	for _, e := range entries {
+		if e.Proxy != "" {
+			proxies = append(proxies, e.Proxy)
+			continue
+		}
 		if e.Protocol != "socks5" || e.IP == "" || e.Port <= 0 {
 			continue
 		}
@@ -118,11 +148,93 @@ func (p *Pool) Refresh(ctx context.Context) error {
 	if len(proxies) == 0 {
 		return errEmpty{path: p.path}
 	}
+	slog.Info("proxy: probing", "count", len(proxies))
+	alive := p.probe(ctx, proxies)
+	if len(alive) == 0 {
+		return errEmpty{path: p.path}
+	}
 	p.mu.Lock()
-	p.proxies = proxies
+	p.proxies = alive
 	p.mu.Unlock()
-	slog.Info("proxy: loaded", "count", len(proxies))
+	slog.Info("proxy: loaded", "candidates", len(proxies), "alive", len(alive))
 	return nil
+}
+
+// probe runs a HEAD request through each candidate in parallel and returns
+// only the ones that responded successfully. Public proxy lists are mostly
+// dead — this filters them out before they hit yt-dlp.
+func (p *Pool) probe(ctx context.Context, candidates []string) []string {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	alive := make([]string, 0, len(candidates))
+	sem := make(chan struct{}, probeConcurrency)
+	for _, pr := range candidates {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(proxyURL string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if p.probeOne(ctx, proxyURL) {
+				mu.Lock()
+				alive = append(alive, proxyURL)
+				mu.Unlock()
+			}
+		}(pr)
+	}
+	wg.Wait()
+	return alive
+}
+
+func (p *Pool) probeOne(ctx context.Context, proxyURL string) bool {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	u, err := url.Parse(proxyURL)
+	if err != nil {
+		return false
+	}
+	dialer, err := proxy.FromURL(u, proxy.Direct)
+	if err != nil {
+		return false
+	}
+	tr := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialer.Dial(network, addr)
+		},
+	}
+	defer tr.CloseIdleConnections()
+	client := &http.Client{Transport: tr}
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, probeTarget, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode < 500
+}
+
+func isURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+func fetchURL(ctx context.Context, url string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	return io.ReadAll(resp.Body)
 }
 
 func (p *Pool) loop() {

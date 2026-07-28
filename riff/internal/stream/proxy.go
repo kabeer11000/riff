@@ -3,7 +3,9 @@ package stream
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
+	"time"
 )
 
 // client is used for upstream googlevideo fetches. No redirect surprises, a
@@ -23,12 +25,16 @@ func Proxy(ctx context.Context, w http.ResponseWriter, r *http.Request, upstream
 		req.Header.Set("Range", rng)
 	}
 
+	start := time.Now()
 	resp, err := client.Do(req)
+	elapsed := time.Since(start)
 	if err != nil {
+		slog.Warn("stream: upstream fetch failed", "url", upstreamURL, "elapsed", elapsed, "err", err)
 		http.Error(w, "upstream fetch failed", http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
+	slog.Info("stream: upstream", "url", upstreamURL, "status", resp.StatusCode, "elapsed", elapsed, "bytes", resp.ContentLength, "ctype", resp.Header.Get("Content-Type"), "range", req.Header.Get("Range"))
 
 	h := w.Header()
 	copyHeader(h, resp.Header, "Content-Range")

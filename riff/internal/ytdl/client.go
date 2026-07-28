@@ -3,6 +3,7 @@ package ytdl
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -46,6 +47,21 @@ func (c *Client) ytOptions(modify ...func(*goutubedl.Options)) goutubedl.Options
 // Pool exposes the proxy pool so callers can MarkFailed() on network errors.
 func (c *Client) Pool() *proxy.Pool { return c.pool }
 
+// call wraps goutubedl.New with structured request/response logging.
+func (c *Client) call(ctx context.Context, url string, modify ...func(*goutubedl.Options)) (goutubedl.Result, error) {
+	opts := c.ytOptions(modify...)
+	start := time.Now()
+	slog.Info("ytdl: req", "url", url, "proxy", opts.ProxyUrl, "cookies", opts.Cookies != "")
+	res, err := goutubedl.New(ctx, url, opts)
+	elapsed := time.Since(start)
+	if err != nil {
+		slog.Warn("ytdl: err", "url", url, "proxy", opts.ProxyUrl, "elapsed", elapsed, "err", err)
+		return goutubedl.Result{}, err
+	}
+	slog.Info("ytdl: ok", "url", url, "proxy", opts.ProxyUrl, "elapsed", elapsed, "title", res.Info.Title, "entries", len(res.Info.Entries))
+	return res, nil
+}
+
 const watchURLFmt = "https://www.youtube.com/watch?v=%s"
 
 // Info is the subset of yt-dlp metadata riff cares about. Returned by Search
@@ -71,10 +87,10 @@ func (c *Client) Search(ctx context.Context, query string, limit int) ([]Info, e
 		limit = 20
 	}
 	raw := fmt.Sprintf("ytsearch%d:%s", limit, query)
-	res, err := goutubedl.New(ctx, raw, c.ytOptions(func(o *goutubedl.Options) {
+	res, err := c.call(ctx, raw, func(o *goutubedl.Options) {
 		o.Type = goutubedl.TypePlaylist
 		o.FlatPlaylist = true
-	}))
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -98,9 +114,9 @@ func (c *Client) Search(ctx context.Context, query string, limit int) ([]Info, e
 
 // ResolveInfo returns metadata for a single YouTube video.
 func (c *Client) ResolveInfo(ctx context.Context, videoID string) (Info, error) {
-	res, err := goutubedl.New(ctx, fmt.Sprintf(watchURLFmt, videoID), c.ytOptions(func(o *goutubedl.Options) {
+	res, err := c.call(ctx, fmt.Sprintf(watchURLFmt, videoID), func(o *goutubedl.Options) {
 		o.Type = goutubedl.TypeSingle
-	}))
+	})
 	if err != nil {
 		return Info{}, err
 	}
@@ -132,9 +148,9 @@ type ResolvedStream struct {
 // ResolveStream resolves a video and picks the best directly-proxyable
 // format of the requested kind ("audio" or "muxed").
 func (c *Client) ResolveStream(ctx context.Context, videoID, kind string) (ResolvedStream, error) {
-	res, err := goutubedl.New(ctx, fmt.Sprintf(watchURLFmt, videoID), c.ytOptions(func(o *goutubedl.Options) {
+	res, err := c.call(ctx, fmt.Sprintf(watchURLFmt, videoID), func(o *goutubedl.Options) {
 		o.Type = goutubedl.TypeSingle
-	}))
+	})
 	if err != nil {
 		return ResolvedStream{}, err
 	}
@@ -155,10 +171,10 @@ func (c *Client) ResolveStream(ctx context.Context, videoID, kind string) (Resol
 
 // Playlist returns the flat listing of an external YouTube playlist.
 func (c *Client) Playlist(ctx context.Context, playlistID string) (string, []Info, error) {
-	res, err := goutubedl.New(ctx, "https://www.youtube.com/playlist?list="+playlistID, c.ytOptions(func(o *goutubedl.Options) {
+	res, err := c.call(ctx, "https://www.youtube.com/playlist?list="+playlistID, func(o *goutubedl.Options) {
 		o.Type = goutubedl.TypePlaylist
 		o.FlatPlaylist = true
-	}))
+	})
 	if err != nil {
 		return "", nil, err
 	}
@@ -184,10 +200,10 @@ func (c *Client) Playlist(ctx context.Context, playlistID string) (string, []Inf
 
 // Channel returns the flat listing of an external YouTube channel.
 func (c *Client) Channel(ctx context.Context, channelID string) (string, []Info, error) {
-	res, err := goutubedl.New(ctx, "https://www.youtube.com/channel/"+channelID, c.ytOptions(func(o *goutubedl.Options) {
+	res, err := c.call(ctx, "https://www.youtube.com/channel/"+channelID, func(o *goutubedl.Options) {
 		o.Type = goutubedl.TypeChannel
 		o.FlatPlaylist = true
-	}))
+	})
 	if err != nil {
 		return "", nil, err
 	}

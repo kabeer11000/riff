@@ -69,7 +69,8 @@
       "Read(//e/e/Software/**)",
       "Read(//e/e/Software/riff/riff/**)",
       "Bash(render --version)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(go env *)"
     ]
   }
 }

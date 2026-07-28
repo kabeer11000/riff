@@ -33,6 +33,7 @@ RUN apt-get update \
  && update-ca-certificates \
  && pip install --no-cache-dir --break-system-packages --upgrade certifi yt-dlp \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
+COPY yt-dlp.conf /etc/yt-dlp.conf
 COPY --from=builder /out/riff-server /usr/local/bin/riff-server
 COPY --from=builder /src/proxylists /proxylists
 RUN useradd --system --uid 1000 --shell /usr/sbin/nologin --no-create-home riff

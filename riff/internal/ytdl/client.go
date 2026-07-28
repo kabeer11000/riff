@@ -55,6 +55,9 @@ func (c *Client) call(ctx context.Context, url string, modify ...func(*goutubedl
 	res, err := goutubedl.New(ctx, url, opts)
 	elapsed := time.Since(start)
 	if err != nil {
+		if c.pool != nil {
+			c.pool.MarkFailed(opts.ProxyUrl)
+		}
 		slog.Warn("ytdl: err", "url", url, "proxy", opts.ProxyUrl, "elapsed", elapsed, "err", err)
 		return goutubedl.Result{}, err
 	}

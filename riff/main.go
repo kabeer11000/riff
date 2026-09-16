@@ -13,6 +13,7 @@ import (
 	"riff/m/internal/config"
 	"riff/m/internal/httpapi"
 	"riff/m/internal/index"
+	"riff/m/internal/phpscraper"
 	"riff/m/internal/provider"
 	"riff/m/internal/proxy"
 	"riff/m/internal/store"
@@ -40,12 +41,25 @@ func main() {
 		proxyPool = proxy.NewPool(cfg.ProxyListURL)
 	}
 	y := ytdl.New(cfg.YTDLPPath, cfg.YTDLPCookiesFile, proxyPool)
-	regs := &provider.Registry{Providers: []provider.Provider{provider.NewYouTube(y)}}
+
+	// meta backs search/resolve/playlist/channel; stream (below, always y)
+	// backs stream URL resolution, which the PHP relay can't do.
+	var meta ytdl.Source = y
+	if cfg.ScraperBackend == "php" {
+		if cfg.PHPScraperURL == "" {
+			slog.Error("SCRAPER_BACKEND=php requires PHP_SCRAPER_URL")
+			os.Exit(1)
+		}
+		meta = phpscraper.New(cfg.PHPScraperURL)
+		slog.Info("scraper backend: php", "url", cfg.PHPScraperURL)
+	}
+
+	regs := &provider.Registry{Providers: []provider.Provider{provider.NewYouTube(meta)}}
 	ix := index.New(repo)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: httpapi.NewServer(cfg, repo, y, regs, ix, urlCache, jsonCache).Handler(),
+		Handler: httpapi.NewServer(cfg, repo, meta, y, regs, ix, urlCache, jsonCache).Handler(),
 	}
 
 	go func() {

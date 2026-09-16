@@ -8,7 +8,7 @@ import (
 
 func (s *Server) handleYTPlaylist(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	title, hits, err := s.ytdl.Playlist(r.Context(), id)
+	title, hits, err := s.meta.Playlist(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "playlist failed: "+err.Error())
 		return
@@ -34,7 +34,7 @@ func (s *Server) handleYTPlaylist(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleYTChannel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	title, hits, err := s.ytdl.Channel(r.Context(), id)
+	title, hits, err := s.meta.Channel(r.Context(), id)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "channel failed: "+err.Error())
 		return

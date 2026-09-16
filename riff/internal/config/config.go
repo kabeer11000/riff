@@ -14,6 +14,8 @@ type Config struct {
 	YTDLPPath        string        // path to yt-dlp/youtube-dl binary; empty = look up on PATH
 	YTDLPCookiesFile string        // path to Netscape cookies.txt; empty = no cookies
 	ProxyListURL     string        // path to proxy JSON file; empty disables proxy rotation
+	ScraperBackend   string        // "ytdlp" (default) or "php" — backs search/resolve/playlist/channel
+	PHPScraperURL    string        // base URL of the PHP relay (e.g. https://xxx.rf.gd/phprelay); required if ScraperBackend=php
 
 	CacheMaxTTL      time.Duration // ceiling for cached resolved stream URLs (googlevideo)
 	CacheMetadataTTL time.Duration // metadata responses (tracks, channels, external playlists) — stable
@@ -30,6 +32,8 @@ func Load() Config {
 		YTDLPPath:        env("YTDLP_PATH", ""),
 		YTDLPCookiesFile: env("YTDLP_COOKIES_FILE", "/data/yt-cookies.txt"),
 		ProxyListURL:     env("PROXY_LIST_URL", "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.json"),
+		ScraperBackend:   env("SCRAPER_BACKEND", "ytdlp"),
+		PHPScraperURL:    env("PHP_SCRAPER_URL", ""),
 		CacheMaxTTL:      envDuration("CACHE_MAX_TTL", 5*time.Minute),
 		CacheMetadataTTL: envDuration("CACHE_METADATA_TTL", time.Hour),
 		CacheSearchTTL:   envDuration("CACHE_SEARCH_TTL", 5*time.Minute),

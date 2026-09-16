@@ -7,12 +7,13 @@ import (
 	"riff/m/internal/ytdl"
 )
 
-// YouTube implements Provider by delegating to the existing ytdl.Client.
+// YouTube implements Provider by delegating to a ytdl.Source (either the real
+// yt-dlp-backed client or a PHP-relay-backed one).
 type YouTube struct {
-	c *ytdl.Client
+	c ytdl.Source
 }
 
-func NewYouTube(c *ytdl.Client) *YouTube { return &YouTube{c: c} }
+func NewYouTube(c ytdl.Source) *YouTube { return &YouTube{c: c} }
 
 func (y *YouTube) Name() string { return "youtube" }
 

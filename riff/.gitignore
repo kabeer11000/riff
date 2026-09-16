@@ -1,4 +1,8 @@
 riff-server
 riff-server.exe
+riff-server~
 server.log
+.server.pid
 .env
+yt-cookies.txt
+phprelay/updater-secret.php

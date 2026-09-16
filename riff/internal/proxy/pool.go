@@ -70,17 +70,24 @@ type Pool struct {
 	cooldown sync.Map // proxy string -> time.Time when cooldown expires
 }
 
+// NewPool returns immediately; the initial load (which probes every
+// candidate and can take minutes against a list of thousands) runs in the
+// background so it never blocks server startup. Next() already treats an
+// empty pool as "fall back to direct connect", so callers are safe to use
+// the pool before the first load completes.
 func NewPool(path string) *Pool {
 	if path == "" {
 		path = defaultProxyURL
 	}
 	p := &Pool{path: path}
-	if err := p.Refresh(context.Background()); err != nil {
-		slog.Warn("proxy: initial load failed", "err", err, "path", path)
-	} else {
-		slog.Info("proxy: ready", "path", path)
-	}
-	go p.loop()
+	go func() {
+		if err := p.Refresh(context.Background()); err != nil {
+			slog.Warn("proxy: initial load failed", "err", err, "path", path)
+		} else {
+			slog.Info("proxy: ready", "path", path)
+		}
+		p.loop()
+	}()
 	return p
 }
 

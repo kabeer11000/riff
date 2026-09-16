@@ -29,9 +29,10 @@ RUN go build -trimpath -ldflags="-s -w" -o /out/riff-server .
 FROM python:3.12-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-        ca-certificates wget ffmpeg \
+        ca-certificates wget ffmpeg curl unzip \
+ && curl -fsSL https://bun.sh/install | bash \
  && update-ca-certificates \
- && pip install --no-cache-dir --break-system-packages --upgrade certifi yt-dlp \
+ && pip install --no-cache-dir --break-system-packages --upgrade certifi "yt-dlp[default]" \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 COPY yt-dlp.conf /etc/yt-dlp.conf
 COPY --from=builder /out/riff-server /usr/local/bin/riff-server
@@ -41,6 +42,7 @@ USER riff
 ENV PORT=8080 \
     YTDLP_PATH=/usr/local/bin/yt-dlp \
     SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    PATH="/root/.bun/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 EXPOSE 8080

@@ -10,8 +10,10 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-# shellcheck disable=SC2046
-export $(grep -v '^#' .env | xargs)
+set -a
+# shellcheck disable=SC1091
+. ./.env
+set +a
 
 if [ -z "${TURSO_DATABASE_URL:-}" ]; then
   echo "TURSO_DATABASE_URL is empty in .env" >&2

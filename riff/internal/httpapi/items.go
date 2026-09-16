@@ -9,7 +9,6 @@ import (
 	"riff/m/internal/cache"
 	"riff/m/internal/domain"
 	"riff/m/internal/provider"
-	"riff/m/internal/stream"
 )
 
 func (s *Server) handleGetItem(w http.ResponseWriter, r *http.Request) {
@@ -22,9 +21,11 @@ func (s *Server) handleGetItem(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, it)
 }
 
-// handleStreamItem resolves the item's first source to a streamable URL and
-// proxies the bytes. Only YouTube is streamable today; items without a
-// youtube source return 501.
+// handleStreamItem resolves the item's first source to a googlevideo URL and
+// 307-redirects the client to it. The client streams bytes directly from
+// Google; the backend only handles scraping (yt-dlp), cookie/proxy rotation,
+// and short-TTL URL caching. Only YouTube is streamable today; items without
+// a youtube source return 501.
 func (s *Server) handleStreamItem(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	kind := r.URL.Query().Get("kind")
@@ -54,10 +55,10 @@ func (s *Server) handleStreamItem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if e, ok := s.cache.Get(externalID, kind); ok {
-		stream.Proxy(r.Context(), w, r, e.URL, e.ContentType)
+		http.Redirect(w, r, e.URL, http.StatusTemporaryRedirect)
 		return
 	}
-	rs, err := s.ytdl.ResolveStream(r.Context(), externalID, kind)
+	rs, err := s.stream.ResolveStream(r.Context(), externalID, kind)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "resolve failed: "+err.Error())
 		return
@@ -68,15 +69,14 @@ func (s *Server) handleStreamItem(w http.ResponseWriter, r *http.Request) {
 	}
 	s.cache.Set(externalID, kind, cache.Entry{URL: rs.URL, ContentType: rs.ContentType, ExpiresAt: expiresAt})
 	// Background enrichment: fetch the full Info (description, viewCount,
-	// uploadDate) and persist it back into the source's metadata. Audio
-	// doesn't wait on this — the user already has playback. Next /items/{id}
-	// read returns the richer data.
+	// uploadDate) and persist it back into the source's metadata. The user
+	// already has playback; next /items/{id} read returns the richer data.
 	go s.enrichSourceMetadata(context.Background(), id, externalID)
-	stream.Proxy(r.Context(), w, r, rs.URL, rs.ContentType)
+	http.Redirect(w, r, rs.URL, http.StatusTemporaryRedirect)
 }
 
 func (s *Server) enrichSourceMetadata(ctx context.Context, itemID, externalID string) {
-	info, err := s.ytdl.ResolveInfo(ctx, externalID)
+	info, err := s.meta.ResolveInfo(ctx, externalID)
 	if err != nil {
 		return
 	}

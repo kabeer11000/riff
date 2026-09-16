@@ -114,7 +114,12 @@ class PlayerController extends Notifier<PlayerState> {
     _contextKind = contextKind;
     _contextId = contextId;
     _contextTitle = contextTitle;
-    state = state.copyWith(track: track, isLoading: true, clearError: true);
+    state = state.copyWith(
+      track: track,
+      isLoading: true,
+      clearError: true,
+      clearItem: true,
+    );
     syncPlayerUrl(itemId: track.id);
     unawaited(_player.stop());
     final previous = _audioChain;

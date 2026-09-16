@@ -1,0 +1,17 @@
+Welcome to  Riff Music!
+Riff is a open-source audio/video aggregator / streaming platform powered by Youtube (YTDL), Spotify and more.
+riff/riff contains sources for the main backend written in Go.
+riff/client contains sources for frontend code written in Flutter, this runs across IOS, Web and Android targets.
+riff/recd is a upcoming recommendation service were introducing inside Riff.
+
+
+Riff is a spiritual successor to Kabeer's Music (Better known as Yebr Music) and implements a lot of the same features but learns from its mistakes.
+
+We are planning to add our own custom residential proxies via Android Phones and ESP-Like microcontrollers connecting via reverse shell acting as a Layer-4 proxy.
+We would be delighted to see and open for contribution
+
+Regards,
+Kabeer
+
+* Riff Collects userdata *
+Copyright (c) Kabeers Network - All rights reserved (https://kabeers.network/policy)

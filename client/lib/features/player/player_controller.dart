@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart' as ja;
 
@@ -148,7 +149,17 @@ class PlayerController extends Notifier<PlayerState> {
       }
       if (requestId != _playRequestId) return;
       url ??= api.streamUrl(track.id, kind: 'audio');
-      await _player.setUrl(url);
+      await _player.setAudioSource(
+        ja.AudioSource.uri(
+          Uri.parse(url),
+          tag: MediaItem(
+            id: track.id,
+            title: track.title,
+            artist: track.uploader,
+            artUri: track.thumbnail.isEmpty ? null : Uri.parse(track.thumbnail),
+          ),
+        ),
+      );
       if (requestId != _playRequestId) return;
       state = state.copyWith(item: item, isLoading: false);
       if (autoStart) {

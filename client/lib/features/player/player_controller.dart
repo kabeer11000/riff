@@ -7,6 +7,7 @@ import '../../api/endpoints/history.dart';
 import '../../api/endpoints/items.dart';
 import '../../api/models/item.dart';
 import '../../api/models/search_result.dart';
+import '../../core/native_ytdl.dart';
 import '../../core/url_state.dart';
 import 'queue_provider.dart';
 
@@ -133,7 +134,20 @@ class PlayerController extends Notifier<PlayerState> {
       final api = ref.read(itemsApiProvider);
       final item = await api.get(track.id);
       if (requestId != _playRequestId) return;
-      final url = api.streamUrl(track.id, kind: 'audio');
+
+      // On platforms that can run a bundled yt-dlp (Windows today), resolve
+      // locally: the same machine that resolves the stream URL also plays
+      // it, so there's no datacenter-IP flagging and no IP-lock mismatch —
+      // both problems the backend hits on Render. Falls back to the
+      // backend's stream endpoint on any failure (video ID missing, native
+      // resolve failed, non-Windows platform).
+      String? url;
+      final ytId = item.youtubeSource?.externalId;
+      if (NativeYtdl.isSupported && ytId != null && ytId.isNotEmpty) {
+        url = await NativeYtdl.resolveAudioUrl(ytId);
+      }
+      if (requestId != _playRequestId) return;
+      url ??= api.streamUrl(track.id, kind: 'audio');
       await _player.setUrl(url);
       if (requestId != _playRequestId) return;
       state = state.copyWith(item: item, isLoading: false);

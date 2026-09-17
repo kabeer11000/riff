@@ -41,8 +41,13 @@ const (
 	// proxy can reach YouTube. Anything slower is dead.
 	probeTimeout = 5 * time.Second
 
-	// Parallel probe workers. Cap to avoid swamping the network.
-	probeConcurrency = 50
+	// Parallel probe workers. Cap to avoid swamping the network — at 50, this
+	// saturated the container's outbound network capacity badly enough that
+	// unrelated calls (e.g. Turso) started timing out at the TCP dial stage
+	// for the ~15-20min the probe runs after every deploy. Lower trades a
+	// longer warm-up for not degrading the rest of the app meanwhile; Next()
+	// already falls back to direct-connect while the pool is still loading.
+	probeConcurrency = 8
 
 	// What we HEAD through each proxy to verify it's alive and can reach YT.
 	probeTarget = "https://www.youtube.com/robots.txt"

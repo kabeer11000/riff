@@ -51,15 +51,20 @@ func main() {
 	}
 	y := ytdl.New(cfg.YTDLPPath, cfg.YTDLPCookiesFile, proxyPool)
 
-	// meta backs search/resolve/playlist/channel; stream (below, always y)
-	// backs stream URL resolution, which the PHP relay can't do.
+	// meta backs search/resolve/playlist/channel; stream backs stream URL
+	// resolution. Both swap to the PHP relay together: it resolves streams
+	// via an InnerTube client context that returns unciphered URLs, which
+	// matters on hosts like Render where yt-dlp's own IP gets blocked.
 	var meta ytdl.Source = y
+	var stream ytdl.StreamResolver = y
 	if cfg.ScraperBackend == "php" {
 		if cfg.PHPScraperURL == "" {
 			slog.Error("SCRAPER_BACKEND=php requires PHP_SCRAPER_URL")
 			os.Exit(1)
 		}
-		meta = phpscraper.New(cfg.PHPScraperURL)
+		php := phpscraper.New(cfg.PHPScraperURL)
+		meta = php
+		stream = php
 		slog.Info("scraper backend: php", "url", cfg.PHPScraperURL)
 	}
 
@@ -68,7 +73,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: httpapi.NewServer(cfg, repo, meta, y, regs, ix, urlCache, jsonCache).Handler(),
+		Handler: httpapi.NewServer(cfg, repo, meta, stream, regs, ix, urlCache, jsonCache).Handler(),
 	}
 
 	go func() {

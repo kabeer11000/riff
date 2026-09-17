@@ -33,3 +33,7 @@ services:
         value: https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.json
       - key: REDIS_URL
         sync: false
+      - key: SCRAPER_BACKEND
+        value: php
+      - key: PHP_SCRAPER_URL
+        value: https://docs-kabeersnetwork-kview-app-sta.rf.gd/projects/riff

@@ -20,9 +20,10 @@ const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 
 // refresh before the host would reject a stale cookie.
 const cookieTTL = 5 * time.Hour
 
-// Client implements ytdl.Source by calling PHP scraper scripts hosted on
-// InfinityFree. It does not implement ResolveStream: format/signature
-// extraction stays on the real yt-dlp client (see ytdl.Source).
+// Client implements ytdl.Source and ytdl.StreamResolver by calling PHP
+// scraper scripts hosted on InfinityFree. ResolveStream (stream.php) uses an
+// InnerTube client context that returns unciphered URLs directly, unlike the
+// WEB context search.php/video.php use — see phprelay/stream.php.
 type Client struct {
 	baseURL string
 	http    *http.Client
@@ -32,7 +33,10 @@ type Client struct {
 	cookieSet time.Time
 }
 
-var _ ytdl.Source = (*Client)(nil)
+var (
+	_ ytdl.Source         = (*Client)(nil)
+	_ ytdl.StreamResolver = (*Client)(nil)
+)
 
 func New(baseURL string) *Client {
 	return &Client{
@@ -233,6 +237,37 @@ func (c *Client) Channel(ctx context.Context, channelID string) (string, []ytdl.
 }
 
 func (c *Client) Thumbnail(videoID string) string { return ytdl.CanonicalThumbnail(videoID) }
+
+type streamEntry struct {
+	URL       string `json:"url"`
+	MimeType  string `json:"mimeType"`
+	ExpiresAt int64  `json:"expiresAt"`
+}
+
+// ResolveStream calls stream.php, which resolves via an InnerTube client
+// context that returns unciphered URLs (see phprelay/stream.php).
+func (c *Client) ResolveStream(ctx context.Context, videoID, kind string) (ytdl.ResolvedStream, error) {
+	body, err := c.get(ctx, "/stream.php", url.Values{"id": {videoID}, "kind": {kind}})
+	if err != nil {
+		return ytdl.ResolvedStream{}, err
+	}
+	var e streamEntry
+	if err := json.Unmarshal(body, &e); err != nil {
+		return ytdl.ResolvedStream{}, fmt.Errorf("phpscraper: stream.php decode: %w", err)
+	}
+	if e.URL == "" {
+		return ytdl.ResolvedStream{}, fmt.Errorf("phpscraper: no stream url for %s", videoID)
+	}
+	rs := ytdl.ResolvedStream{
+		URL:         e.URL,
+		ContentType: firstNonEmpty(strings.SplitN(e.MimeType, ";", 2)[0], "application/octet-stream"),
+		Kind:        kind,
+	}
+	if e.ExpiresAt > 0 {
+		rs.ExpiresAt = time.Unix(e.ExpiresAt, 0)
+	}
+	return rs, nil
+}
 
 func toInfos(entries []jsonEntry) []ytdl.Info {
 	out := make([]ytdl.Info, 0, len(entries))

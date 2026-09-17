@@ -6,6 +6,13 @@ const INNERTUBE_KEY = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
 const CLIENT_VERSION = '2.20240101.01.00';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
+// The ANDROID client context is used only for stream.php: YouTube serves it
+// adaptiveFormats/formats with plain `url` fields (no signatureCipher), which
+// the WEB context doesn't give us and which we have no way to decipher in
+// PHP. Verified empirically against the live API — see stream.php.
+const ANDROID_CLIENT_VERSION = '20.10.38';
+const ANDROID_USER_AGENT = 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip';
+
 function json_fail(int $status, string $message): void {
     http_response_code($status);
     header('Content-Type: application/json');
@@ -43,33 +50,59 @@ function sapisidhash(string $sapisid, string $origin): string {
     return "SAPISIDHASH {$ts}_{$hash}";
 }
 
-// innertube_post calls https://www.youtube.com/youtubei/v1/{endpoint} with
-// the WEB client context and returns the decoded response body. Uses the
-// logged-in session from cookies.php when available — authenticated
-// requests are far less likely to be rate-limited/blocked than anonymous
-// ones.
-function innertube_post(string $endpoint, array $body): array {
-    $body['context'] = [
-        'client' => [
-            'clientName' => 'WEB',
-            'clientVersion' => CLIENT_VERSION,
-            'hl' => 'en',
-            'gl' => 'US',
-        ],
-    ];
+// innertube_post calls https://www.youtube.com/youtubei/v1/{endpoint} and
+// returns the decoded response body. clientContext selects which InnerTube
+// client identity to present:
+//   'WEB'     - default. Uses the logged-in session from cookies.php when
+//               available (far less likely to be rate-limited/blocked than
+//               anonymous), but signature-ciphers stream URLs we can't
+//               decode here.
+//   'ANDROID' - no cookies/auth (a different auth model entirely — sending
+//               WEB cookies here would look like abuse, not help). Returns
+//               plain, unciphered stream URLs. Used only by stream.php.
+function innertube_post(string $endpoint, array $body, string $clientContext = 'WEB'): array {
+    if ($clientContext === 'ANDROID') {
+        $body['context'] = [
+            'client' => [
+                'clientName' => 'ANDROID',
+                'clientVersion' => ANDROID_CLIENT_VERSION,
+                'androidSdkVersion' => 30,
+                'userAgent' => ANDROID_USER_AGENT,
+                'osName' => 'Android',
+                'osVersion' => '11',
+                'hl' => 'en',
+                'gl' => 'US',
+            ],
+        ];
+        $headers = [
+            'Content-Type: application/json',
+            'User-Agent: ' . ANDROID_USER_AGENT,
+            'X-YouTube-Client-Name: 3',
+            'X-YouTube-Client-Version: ' . ANDROID_CLIENT_VERSION,
+        ];
+    } else {
+        $body['context'] = [
+            'client' => [
+                'clientName' => 'WEB',
+                'clientVersion' => CLIENT_VERSION,
+                'hl' => 'en',
+                'gl' => 'US',
+            ],
+        ];
 
-    $origin = 'https://www.youtube.com';
-    $headers = [
-        'Content-Type: application/json',
-        'User-Agent: ' . USER_AGENT,
-        'Origin: ' . $origin,
-        'X-Origin: ' . $origin,
-    ];
-    $session = load_session();
-    if ($session !== null && !empty($session['cookie'])) {
-        $headers[] = 'Cookie: ' . $session['cookie'];
-        if (!empty($session['sapisid'])) {
-            $headers[] = 'Authorization: ' . sapisidhash($session['sapisid'], $origin);
+        $origin = 'https://www.youtube.com';
+        $headers = [
+            'Content-Type: application/json',
+            'User-Agent: ' . USER_AGENT,
+            'Origin: ' . $origin,
+            'X-Origin: ' . $origin,
+        ];
+        $session = load_session();
+        if ($session !== null && !empty($session['cookie'])) {
+            $headers[] = 'Cookie: ' . $session['cookie'];
+            if (!empty($session['sapisid'])) {
+                $headers[] = 'Authorization: ' . sapisidhash($session['sapisid'], $origin);
+            }
         }
     }
 

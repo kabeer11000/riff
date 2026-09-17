@@ -20,3 +20,11 @@ type Source interface {
 // id. Shared by *Client and phpscraper.Client so both Source implementations
 // agree on the same thumbnail scheme.
 func CanonicalThumbnail(videoID string) string { return ytThumbnail(videoID) }
+
+// StreamResolver resolves a playable stream URL for a video. *Client (real
+// yt-dlp) always implements it. phpscraper.Client also implements it, via an
+// alternate InnerTube client context that returns unciphered URLs directly —
+// useful where yt-dlp itself gets IP-blocked (e.g. Render's datacenter IPs).
+type StreamResolver interface {
+	ResolveStream(ctx context.Context, videoID, kind string) (ResolvedStream, error)
+}

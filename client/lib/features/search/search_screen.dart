@@ -10,6 +10,9 @@ import 'widgets/search_result_tile.dart';
 // Matches _wideBreakpoint in lib/app/app.dart — desktop opens search as a
 // modal dialog instead of a full-screen page.
 const _wideBreakpoint = 720.0;
+// Below this, don't fire a search at all — a 1-char query is almost never
+// useful and every unique query is a full backend round-trip.
+const _minQueryLength = 2;
 
 /// Full-screen search page (mobile). Desktop uses [openSearch] which presents
 /// the same UI inside a modal dialog instead.
@@ -88,12 +91,19 @@ class _SearchBodyState extends ConsumerState<_SearchBody> {
 
   void _onChanged(String value) {
     // Persist raw text immediately so it survives teardown; debounce the
-    // actual search query so we don't fire one request per keystroke.
+    // actual search query so we don't fire one request per keystroke. Each
+    // unique query is a cache miss on the backend (full provider search +
+    // indexing), so this window is longer than a typical UI debounce.
     ref.read(searchInputProvider.notifier).set(value);
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 300), () {
+    final trimmed = value.trim();
+    if (trimmed.length < _minQueryLength) {
+      ref.read(searchQueryProvider.notifier).clear();
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 450), () {
       if (!mounted) return;
-      ref.read(searchQueryProvider.notifier).set(value.trim());
+      ref.read(searchQueryProvider.notifier).set(trimmed);
     });
   }
 

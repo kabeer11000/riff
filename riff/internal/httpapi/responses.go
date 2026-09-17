@@ -46,15 +46,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // remaining TTL so clients/CDNs don't cache past freshness.
 func (s *Server) writeCachedJSON(w http.ResponseWriter, key string, ttl time.Duration, v any) {
 	if e, ok := s.jsonCache.Get(key); ok {
-		remaining := int(time.Until(e.ExpiresAt).Seconds())
-		if remaining < 0 {
-			remaining = 0
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(remaining))
-		w.Header().Set("X-Cache", "HIT")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(e.Body)
+		writeCachedBody(w, e)
 		return
 	}
 	body, err := json.Marshal(v)
@@ -69,6 +61,21 @@ func (s *Server) writeCachedJSON(w http.ResponseWriter, key string, ttl time.Dur
 	w.Header().Set("X-Cache", "MISS")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
+}
+
+// writeCachedBody serves a previously-cached JSON body, e.g. for callers that
+// need to short-circuit expensive work on a cache hit before writeCachedJSON
+// would otherwise check it.
+func writeCachedBody(w http.ResponseWriter, e cache.JSONEntry) {
+	remaining := int(time.Until(e.ExpiresAt).Seconds())
+	if remaining < 0 {
+		remaining = 0
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(remaining))
+	w.Header().Set("X-Cache", "HIT")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(e.Body)
 }
 
 // writeError writes a JSON error envelope: {"error": "..."}.

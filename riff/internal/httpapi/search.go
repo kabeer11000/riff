@@ -15,6 +15,12 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	_ = r.URL.Query().Get("type") // accepted for back-compat; Registry returns items of any type
 
+	cacheKey := fmt.Sprintf("search|%s|%d", q, limit)
+	if e, ok := s.jsonCache.Get(cacheKey); ok {
+		writeCachedBody(w, e)
+		return
+	}
+
 	results, err := s.providers.SearchAll(r.Context(), q, limit)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "search failed: "+err.Error())
@@ -44,9 +50,5 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			"type":      typ,
 		})
 	}
-	s.writeCachedJSON(w,
-		fmt.Sprintf("search|%s|%d", q, limit),
-		s.cfg.CacheSearchTTL,
-		map[string]any{"results": hits},
-	)
+	s.writeCachedJSON(w, cacheKey, s.cfg.CacheSearchTTL, map[string]any{"results": hits})
 }

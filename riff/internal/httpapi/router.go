@@ -15,16 +15,17 @@ import (
 type Server struct {
 	cfg       config.Config
 	repo      store.Repository
-	meta      ytdl.Source         // search/resolve/playlist/channel — swappable (real ytdl or php relay)
-	stream    ytdl.StreamResolver // stream URL resolution — swappable (real ytdl or php relay)
-	providers *provider.Registry
-	indexer   *index.Indexer
-	cache     *cache.URLCache  // resolved googlevideo stream URLs (short TTL)
-	jsonCache *cache.JSONCache // JSON response bodies (longer TTL)
+	meta           ytdl.Source         // search/resolve/playlist/channel — swappable (real ytdl or php relay)
+	stream         ytdl.StreamResolver // stream URL resolution — tried first
+	streamFallback ytdl.StreamResolver // tried if stream resolves a URL that turns out to 403 on fetch; nil = no fallback
+	providers      *provider.Registry
+	indexer        *index.Indexer
+	cache          *cache.URLCache  // resolved googlevideo stream URLs (short TTL)
+	jsonCache      *cache.JSONCache // JSON response bodies (longer TTL)
 }
 
-func NewServer(cfg config.Config, repo store.Repository, meta ytdl.Source, stream ytdl.StreamResolver, regs *provider.Registry, ix *index.Indexer, c *cache.URLCache, jc *cache.JSONCache) *Server {
-	return &Server{cfg: cfg, repo: repo, meta: meta, stream: stream, providers: regs, indexer: ix, cache: c, jsonCache: jc}
+func NewServer(cfg config.Config, repo store.Repository, meta ytdl.Source, stream, streamFallback ytdl.StreamResolver, regs *provider.Registry, ix *index.Indexer, c *cache.URLCache, jc *cache.JSONCache) *Server {
+	return &Server{cfg: cfg, repo: repo, meta: meta, stream: stream, streamFallback: streamFallback, providers: regs, indexer: ix, cache: c, jsonCache: jc}
 }
 
 // Handler builds the fully-wired http.Handler (routes + middleware chain).

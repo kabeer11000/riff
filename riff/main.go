@@ -55,8 +55,14 @@ func main() {
 	// resolution. Both swap to the PHP relay together: it resolves streams
 	// via an InnerTube client context that returns unciphered URLs, which
 	// matters on hosts like Render where yt-dlp's own IP gets blocked.
+	//
+	// streamFallback stays yt-dlp even when php is primary: YouTube enforces
+	// a proof-of-origin token requirement on the ANDROID client per-video,
+	// seemingly inconsistently, so a resolved php URL can still 403 on fetch.
+	// Falling back to yt-dlp (with its own proxy pool) catches those.
 	var meta ytdl.Source = y
 	var stream ytdl.StreamResolver = y
+	var streamFallback ytdl.StreamResolver
 	if cfg.ScraperBackend == "php" {
 		if cfg.PHPScraperURL == "" {
 			slog.Error("SCRAPER_BACKEND=php requires PHP_SCRAPER_URL")
@@ -65,6 +71,7 @@ func main() {
 		php := phpscraper.New(cfg.PHPScraperURL)
 		meta = php
 		stream = php
+		streamFallback = y
 		slog.Info("scraper backend: php", "url", cfg.PHPScraperURL)
 	}
 
@@ -73,7 +80,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
-		Handler: httpapi.NewServer(cfg, repo, meta, stream, regs, ix, urlCache, jsonCache).Handler(),
+		Handler: httpapi.NewServer(cfg, repo, meta, stream, streamFallback, regs, ix, urlCache, jsonCache).Handler(),
 	}
 
 	go func() {

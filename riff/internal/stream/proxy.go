@@ -12,14 +12,15 @@ import (
 // generous timeout for long streams handled via request context instead.
 var client = &http.Client{}
 
-// Proxy fetches upstreamURL and streams it back to w, forwarding the client's
-// Range header so seeking works. It copies the relevant response headers and
-// status (200 or 206) from upstream.
-func Proxy(ctx context.Context, w http.ResponseWriter, r *http.Request, upstreamURL, contentType string) {
+// Fetch performs the upstream GET (forwarding the client's Range header) and
+// returns the raw response for the caller to inspect before committing to
+// write it back to the client — lets a caller try a fallback URL on a 403
+// without having already written headers to w. The caller owns resp.Body and
+// must close it (Serve does this for it).
+func Fetch(ctx context.Context, r *http.Request, upstreamURL string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, upstreamURL, nil)
 	if err != nil {
-		http.Error(w, "bad upstream url", http.StatusBadGateway)
-		return
+		return nil, err
 	}
 	if rng := r.Header.Get("Range"); rng != "" {
 		req.Header.Set("Range", rng)
@@ -30,12 +31,16 @@ func Proxy(ctx context.Context, w http.ResponseWriter, r *http.Request, upstream
 	elapsed := time.Since(start)
 	if err != nil {
 		slog.Warn("stream: upstream fetch failed", "url", upstreamURL, "elapsed", elapsed, "err", err)
-		http.Error(w, "upstream fetch failed", http.StatusBadGateway)
-		return
+		return nil, err
 	}
-	defer resp.Body.Close()
 	slog.Info("stream: upstream", "url", upstreamURL, "status", resp.StatusCode, "elapsed", elapsed, "bytes", resp.ContentLength, "ctype", resp.Header.Get("Content-Type"), "range", req.Header.Get("Range"))
+	return resp, nil
+}
 
+// Serve writes an already-fetched upstream response to w, copying the
+// relevant headers and status (200 or 206). Closes resp.Body.
+func Serve(w http.ResponseWriter, resp *http.Response, contentType string) {
+	defer resp.Body.Close()
 	h := w.Header()
 	copyHeader(h, resp.Header, "Content-Range")
 	copyHeader(h, resp.Header, "Content-Length")
@@ -51,6 +56,12 @@ func Proxy(ctx context.Context, w http.ResponseWriter, r *http.Request, upstream
 
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
+}
+
+// Ok reports whether an upstream response is a usable media response (as
+// opposed to a 403/404/etc from a resolved-but-blocked URL).
+func Ok(resp *http.Response) bool {
+	return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPartialContent
 }
 
 func copyHeader(dst, src http.Header, key string) {

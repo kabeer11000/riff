@@ -30,7 +30,7 @@ services:
       - key: YTDLP_COOKIES_CONTENT
         sync: false
       - key: PROXY_LIST_URL
-        value: https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.json
+        value: "" # empty disables rotation; the public list's ~3% yield wasn't worth the network-storm risk on every deploy
       - key: REDIS_URL
         sync: false
       - key: SCRAPER_BACKEND

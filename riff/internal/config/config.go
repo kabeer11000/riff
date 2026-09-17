@@ -33,7 +33,7 @@ func Load() Config {
 		YTDLPPath:           env("YTDLP_PATH", ""),
 		YTDLPCookiesFile:    env("YTDLP_COOKIES_FILE", "/data/yt-cookies.txt"),
 		YTDLPCookiesContent: env("YTDLP_COOKIES_CONTENT", ""),
-		ProxyListURL:        env("PROXY_LIST_URL", "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.json"),
+		ProxyListURL:        env("PROXY_LIST_URL", ""),
 		ScraperBackend:      env("SCRAPER_BACKEND", "ytdlp"),
 		PHPScraperURL:       env("PHP_SCRAPER_URL", ""),
 		CacheMaxTTL:         envDuration("CACHE_MAX_TTL", 5*time.Minute),

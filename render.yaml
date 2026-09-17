@@ -22,11 +22,13 @@ services:
       - key: TURSO_AUTH_TOKEN
         sync: false
       - key: PUBLIC_BASE_URL
-        value: https://riff-api.onrender.com
+        value: https://riff-dmq0.onrender.com
       - key: YTDLP_PATH
         value: /usr/local/bin/yt-dlp
       - key: YTDLP_COOKIES_FILE
         value: /data/yt-cookies.txt
+      - key: YTDLP_COOKIES_CONTENT
+        sync: false
       - key: PROXY_LIST_URL
         value: https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.json
       - key: REDIS_URL

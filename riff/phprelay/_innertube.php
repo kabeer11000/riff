@@ -19,8 +19,35 @@ function cors_json($data): void {
     exit;
 }
 
+// load_session reads phprelay/cookies.php (gitignored, holds a real logged-in
+// YouTube session exported from cookies.txt) if present. Returns null when
+// absent so innertube_post falls back to anonymous requests rather than
+// failing — the cookie file is an optional hardening, not a hard dependency.
+function load_session(): ?array {
+    static $loaded = false;
+    static $session = null;
+    if ($loaded) return $session;
+    $loaded = true;
+    $path = __DIR__ . '/cookies.php';
+    if (is_file($path)) {
+        $session = require $path;
+    }
+    return $session;
+}
+
+// sapisidhash implements YouTube's Authorization scheme for authenticated
+// InnerTube calls: SAPISIDHASH {ts}_{sha1("{ts} {sapisid} {origin}")}.
+function sapisidhash(string $sapisid, string $origin): string {
+    $ts = time();
+    $hash = sha1("$ts $sapisid $origin");
+    return "SAPISIDHASH {$ts}_{$hash}";
+}
+
 // innertube_post calls https://www.youtube.com/youtubei/v1/{endpoint} with
-// the WEB client context and returns the decoded response body.
+// the WEB client context and returns the decoded response body. Uses the
+// logged-in session from cookies.php when available — authenticated
+// requests are far less likely to be rate-limited/blocked than anonymous
+// ones.
 function innertube_post(string $endpoint, array $body): array {
     $body['context'] = [
         'client' => [
@@ -31,15 +58,27 @@ function innertube_post(string $endpoint, array $body): array {
         ],
     ];
 
+    $origin = 'https://www.youtube.com';
+    $headers = [
+        'Content-Type: application/json',
+        'User-Agent: ' . USER_AGENT,
+        'Origin: ' . $origin,
+        'X-Origin: ' . $origin,
+    ];
+    $session = load_session();
+    if ($session !== null && !empty($session['cookie'])) {
+        $headers[] = 'Cookie: ' . $session['cookie'];
+        if (!empty($session['sapisid'])) {
+            $headers[] = 'Authorization: ' . sapisidhash($session['sapisid'], $origin);
+        }
+    }
+
     $ch = curl_init('https://www.youtube.com/youtubei/v1/' . $endpoint . '?key=' . INNERTUBE_KEY);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => json_encode($body),
-        CURLOPT_HTTPHEADER => [
-            'Content-Type: application/json',
-            'User-Agent: ' . USER_AGENT,
-        ],
+        CURLOPT_HTTPHEADER => $headers,
         CURLOPT_TIMEOUT => 15,
         CURLOPT_CONNECTTIMEOUT => 10,
     ]);

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"time"
 
 	"riff/m/internal/cache"
@@ -35,6 +36,14 @@ func main() {
 
 	jsonCache := cache.NewJSON()
 	defer jsonCache.Close()
+
+	if cfg.YTDLPCookiesContent != "" {
+		if err := writeCookiesFile(cfg.YTDLPCookiesFile, cfg.YTDLPCookiesContent); err != nil {
+			slog.Error("write cookies file", "path", cfg.YTDLPCookiesFile, "err", err)
+			os.Exit(1)
+		}
+		slog.Info("wrote yt-dlp cookies file from YTDLP_COOKIES_CONTENT", "path", cfg.YTDLPCookiesFile)
+	}
 
 	var proxyPool *proxy.Pool
 	if cfg.ProxyListURL != "" {
@@ -78,4 +87,14 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
+}
+
+// writeCookiesFile writes content to path, creating parent directories as
+// needed (Render's persistent disk mounts empty, so /data itself may not
+// exist yet on first boot).
+func writeCookiesFile(path, content string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(content), 0o600)
 }

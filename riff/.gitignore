@@ -6,3 +6,4 @@ server.log
 .env
 yt-cookies.txt
 phprelay/updater-secret.php
+phprelay/cookies.php

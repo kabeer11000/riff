@@ -4,16 +4,17 @@
 - [x] Native yt-dlp bundled for Windows audio resolution (pre-existing, committed `4bca701`)
 - [x] Background audio on Android/iOS via `just_audio_background`/`audio_service` (committed `490e708`)
 - [x] Search latency: cache-check-first + parallelized indexing (committed `a11a0ff`)
-
-## In progress
-- [ ] Verify whether an alternate InnerTube client context (ANDROID/IOS/etc) returns
-      an unciphered, actually-fetchable stream URL today — empirical test running.
-      Outcome decides whether the PHP-relay web-streaming fix is a small change or
-      a much bigger signature-descrambling effort.
+- [x] Production 403 fix: stream resolution now goes through the PHP relay's ANDROID
+      InnerTube client context, which returns unciphered URLs the proxy-pool/yt-dlp
+      path never reliably could (committed `1b394c5`, live on Render with
+      `SCRAPER_BACKEND=php`). Verified in production logs: a URL resolved by
+      InfinityFree's IP was fetched by Render's (different) IP and returned 206 —
+      confirms the ANDROID client's URLs aren't IP-locked the way WEB's are.
+      Caveat: yt-dlp's own source flags a `GVS_PO_TOKEN_POLICY` on this client that
+      YouTube could start enforcing at any time, which would break this again —
+      not a permanent fix, watch for renewed 403s.
 
 ## Planned
-- [ ] Web 403 fix: extend PHP relay (`riff/phprelay/`) to resolve real stream URLs
-      for web playback, scoped by the empirical test above.
 - [ ] Ad-free / native video playback on native platforms (currently web-only, via
       YouTube iframe which still shows ads). Needs raw muxed/video URL resolution
       (harder than audio-only) + a real video widget for native.
